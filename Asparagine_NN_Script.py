@@ -142,7 +142,7 @@ def Pearson(model, features, y_true, batch, verbose_):
 
     R = tmp_numerator / (math.sqrt(tmp_denominator_pred) * math.sqrt(tmp_denominator_real))
 
-    return R[0], y_pred
+    return R[0], y_pred.flatten()
 
 # %% [markdown]
 # ## NEURAL NETWORK PARAMETERS
@@ -357,6 +357,7 @@ def isolateParam(optimal_NNs, data, parameter, start_index, end_index, NN_start,
             tmp_R.append(tmp)
 
             dict_title = "NN {} Correlation for {}: {} {}".format(j, parameter, i, mae_or_R)
+            print(tmp_predictions)
             _predictions[dict_title] = tmp_predictions
             
             tmp_mae.append(test_mae)
@@ -439,6 +440,7 @@ def IsolateBinaryTime(optimal_NNs, data, parameter, start_time, batch, vbs, mae_
 
                 tmp, tmp_predictions = Pearson(NN, shared_features[i][j], shared_labels[i][j], batch, verbose) 
                 tmp_R.append(tmp)
+                print(tmp_predictions)
 
                 tmp_mae.append(test_mae)
 
@@ -463,10 +465,7 @@ def IsolateBinaryTime(optimal_NNs, data, parameter, start_time, batch, vbs, mae_
 
     return averages_R, averages_mae
 
-# %% [markdown]
-# #### Repeat Sensor Use
 
-# %%
 def repeatSensor(optimal_NNs, data, parameter1, parameter2, start_index, end_index, start_time, batch, vbs, mae_or_R):
 
     # Split the data labels with RSU
@@ -541,6 +540,7 @@ def repeatSensor(optimal_NNs, data, parameter1, parameter2, start_index, end_ind
 
                 tmp_mae.append(test_mae)
 
+
                 dict_title = "NN {} Correlation for {}, {}: {} {}".format(j, parameter1, parameter2, i, mae_or_R)
                 _predictions[dict_title] = tmp_predictions[0]
 
@@ -561,20 +561,47 @@ def repeatSensor(optimal_NNs, data, parameter1, parameter2, start_index, end_ind
     for i in tr_R:
         averages_R.append([sum(i[0])/len(i[0]), sum(i[1])/len(i[1]), sum(i[2])/len(i[2])])
 
-
+    
     return averages_R, averages_mae
 
 # %%
 
-verbose_repeat = 1
 start_index= 0
 end_index = 3
-
+vbs = 1
 start_time = 1
 param_batches = 10
 
 str_R = "R"
 str_MAE = "MAE"
+
+
+# %% [markdown]
+# #### Isolating Spin Coating
+
+R_of_sc_mae, mae_of_sc_mae = isolateParam(optimal_NNs_mae, dataset, 'Spin Coating', 0, 2, 0, param_batches, vbs, str_MAE)
+R_of_sc_R, mae_of_sc_R = isolateParam(optimal_NNs_R, dataset, 'Spin Coating', 0, 2, 0, param_batches, vbs, str_R)
+
+# %% [markdown]
+# #### Isolating Time
+
+R_time_mae, mae_averages_time_mae = isolateParam(optimal_NNs_mae, dataset, 'Time', 0, 51, start_time, param_batches, vbs, str_MAE)
+R_time_R, mae_averages_time_R = isolateParam(optimal_NNs_R, dataset, 'Time', 0, 51, start_time, param_batches, vbs, str_R)
+
+# %% [markdown]
+# #### Isolating Spin Coating and Time
+
+R_of_sct_mae, mae_of_sct_mae = IsolateBinaryTime(optimal_NNs_mae,dataset, 'Spin Coating', start_time, param_batches, vbs, str_MAE)
+R_of_sct_R, mae_of_sct_R = IsolateBinaryTime(optimal_NNs_R, dataset, 'Spin Coating', start_time, param_batches, vbs, str_R)
+
+# %% [markdown]
+# #### Isolating Increasing PPM and Time
+
+R_of_increasing_mae, mae_of_increasing_mae = IsolateBinaryTime(optimal_NNs_mae, dataset, 'Increasing PPM', start_time, param_batches, vbs, str_MAE)
+R_of_increasing_R, mae_of_increasing_R = IsolateBinaryTime(optimal_NNs_R, dataset, 'Increasing PPM', start_time, param_batches, vbs, str_R)
+
+# %% [markdown]
+# #### Repeat Sensor Use
 
 R_of_tr_mae, mae_of_tr_mae = repeatSensor(
     optimal_NNs_mae, 
@@ -585,7 +612,7 @@ R_of_tr_mae, mae_of_tr_mae = repeatSensor(
     end_index, 
     start_time, 
     param_batches, 
-    verbose_repeat, 
+    vbs, 
     "MAE"
     )
 
@@ -598,39 +625,9 @@ R_of_tr_R, mae_of_tr_R = repeatSensor(
     end_index, 
     start_time, 
     param_batches, 
-    verbose_repeat, 
+    vbs, 
     "R"
     )
-
-
-
-# %% [markdown]
-# #### Isolating Spin Coating
-
-
-
-# %%
-R_of_sc_mae, mae_of_sc_mae = isolateParam(optimal_NNs_mae, dataset, 'Spin Coating', 0, 2, 0, param_batches, 1, str_MAE)
-R_of_sc_R, mae_of_sc_R = isolateParam(optimal_NNs_R, dataset, 'Spin Coating', 0, 2, 0, param_batches, 1, str_R)
-
-# %% [markdown]
-# #### Isolating Time
-
-# %%
-NN_start_time = 1
-R_time_mae, mae_averages_time_mae = isolateParam(optimal_NNs_mae, dataset, 'Time', 0, 51, NN_start_time, param_batches, 1, str_MAE)
-R_time_R, mae_averages_time_R = isolateParam(optimal_NNs_R, dataset, 'Time', 0, 51, NN_start_time, param_batches, 1, str_R)
-
-
-# %% [markdown]
-# #### Isolating Spin Coating and Time
-
-# %%
-verbose_isolate = 1
-NN_start_sc_t = 1
-R_of_sct_mae, mae_of_sct_mae = IsolateBinaryTime(optimal_NNs_mae,dataset, 'Spin Coating', NN_start_sc_t, param_batches, verbose_isolate, str_MAE)
-R_of_sct_R, mae_of_sct_R = IsolateBinaryTime(optimal_NNs_R, dataset, 'Spin Coating', NN_start_sc_t, param_batches, verbose_isolate, str_R)
-
 
 # %%
 R_of_mins_sct_mae_1 = []
@@ -642,6 +639,8 @@ R_of_mins_sct_R_0 = []
 mae_of_averages_sct_R_1 = []
 mae_of_averages_sct_R_0 = []
 
+print(len(R_of_sct_mae))
+
 for i in range(len(R_of_sct_mae)):
     R_of_mins_sct_mae_1.append(R_of_sct_mae[i][1])
     R_of_mins_sct_mae_0.append(R_of_sct_mae[i][0])
@@ -652,20 +651,8 @@ for i in range(len(R_of_sct_mae)):
     R_of_mins_sct_R_1.append(R_of_sct_R[i][1])
     R_of_mins_sct_R_0.append(R_of_sct_R[i][0])
 
-
     mae_of_averages_sct_R_1.append(mae_of_sct_R[i][1])
     mae_of_averages_sct_R_0.append(mae_of_sct_R[i][0])
-
-
-# %% [markdown]
-# #### Isolating Increasing PPM and Time
-
-# %%
-verbose_isolate = 1
-start_t_increasing = 1
-
-R_of_increasing_mae, mae_of_increasing_mae = IsolateBinaryTime(optimal_NNs_mae, dataset, 'Increasing PPM', start_t_increasing, param_batches, verbose_isolate, str_MAE)
-R_of_increasing_R, mae_of_increasing_R = IsolateBinaryTime(optimal_NNs_R, dataset, 'Increasing PPM', start_t_increasing, param_batches, verbose_isolate, str_R)
 
 
 # %%
@@ -678,6 +665,7 @@ R_of_increasing_R_0 = []
 mae_of_increasing_R_1 = []
 mae_of_increasing_R_0 = []
 
+print(len(R_of_increasing_mae))
 for i in range(len(R_of_increasing_mae)):
     R_of_increasing_mae_1.append(R_of_increasing_mae[i][1])
     R_of_increasing_mae_0.append(R_of_increasing_mae[i][0])
@@ -712,6 +700,7 @@ mae_of_tr_R_1 = []
 mae_of_tr_R_2 = []
 
 
+print(len(R_of_tr_mae))
 for i in range(len(R_of_tr_mae)):
     R_of_tr_mae_0.append(R_of_tr_mae[i][0])
     R_of_tr_mae_1.append(R_of_tr_mae[i][1])
@@ -729,8 +718,6 @@ for i in range(len(R_of_tr_mae)):
     mae_of_tr_R_1.append(mae_of_tr_R[i][1])
     mae_of_tr_R_2.append(mae_of_tr_R[i][2])
 
-
-
 # %% [markdown]
 # # Printing to CSV
 
@@ -740,6 +727,7 @@ filepath = r".\\Sum {} - Epochs {} - Folds {}\\".format(sum_nodes, num_epochs, k
 local_download_path = os.path.expanduser(filepath)
 
 # %%
+
 dict_sc = pd.DataFrame({
     "SC Optimal MAE NN: R"    : R_of_sc_mae,
     "SC Optimal R NN: R"      : R_of_sc_R,
@@ -753,18 +741,17 @@ dict_sc = pd.DataFrame({
     "Time Optimal R NN: MAE"    : mae_averages_time_R,
 
 
+    "Time SC: 0;  Optimal MAE NN: R"    : R_of_mins_sct_mae_0, 
+    "Time SC: 0;  Optimal R NN: R"      : R_of_mins_sct_R_0,
 
-    "Time SC: 0;  Optimal MAE NN: R"    : [R_of_sct_mae[i][0] for i in range(len(R_of_sct_mae))], 
-    "Time SC: 0;  Optimal R NN: R"      : [R_of_sct_R[i][0] for i in range(len(R_of_sct_R))],
+    "Time SC: 1;  Optimal MAE NN: R"    : R_of_mins_sct_mae_1,     
+    "TIme SC: 1;  Optimal R NN: R"      : R_of_mins_sct_R_1,
 
-    "Time SC: 1;  Optimal MAE NN: R"    : [R_of_sct_mae[i][1] for i in range(len(R_of_sct_mae))],     
-    "TIme SC: 1;  Optimal R NN: R"      : [R_of_sct_R[i][1] for i in range(len(R_of_sct_R))],
+    "Time SC: 0;  Optimal MAE NN: MAE"  : mae_of_averages_sct_mae_0, 
+    "Time SC: 0;  Optimal R NN: MAE"    : mae_of_averages_sct_R_0,
 
-    "Time SC: 0;  Optimal MAE NN: MAE"  : [mae_of_sct_mae[i][0] for i in range(len(mae_of_sct_mae))], 
-    "Time SC: 0;  Optimal R NN: MAE"    : [mae_of_sct_R[i][0] for i in range(len(mae_of_sct_R))],
-
-    "Time SC: 1;  Optimal MAE NN: MAE"  : [mae_of_sct_mae[i][1] for i in range(len(mae_of_sct_mae))], 
-    "Time SC: 1; Optimal R NN: MAE"    : [mae_of_sct_R[i][1] for i in range(len(mae_of_sct_R))]
+    "Time SC: 1;  Optimal MAE NN: MAE"  : mae_of_averages_sct_mae_1, 
+    "Time SC: 1; Optimal R NN: MAE"    : mae_of_averages_sct_R_1
     })
 
 dict_sc.to_csv('SC_and_time.csv'.format(sum_nodes, num_epochs, k_folds), index=False)
@@ -772,21 +759,21 @@ dict_sc.to_csv('SC_and_time.csv'.format(sum_nodes, num_epochs, k_folds), index=F
 
 # %%
 dict_repeat_time = pd.DataFrame({
-    "Day 1;  Optimal R NN: R"    : [R_of_tr_R[i][0] for i in range(len(R_of_tr_R))], 
-    "Day 2;  Optimal R NN: R"    : [R_of_tr_R[i][1] for i in range(len(R_of_tr_R))], 
-    "Day 3;  Optimal R NN: R"    : [R_of_tr_R[i][2] for i in range(len(R_of_tr_R))], 
+    "Day 1;  Optimal R NN: R"    : R_of_tr_R_0, 
+    "Day 2;  Optimal R NN: R"    : R_of_tr_R_1, 
+    "Day 3;  Optimal R NN: R"    : R_of_tr_R_2, 
 
-    "Day 1;  Optimal MAE NN: R"    : [R_of_tr_mae[i][0] for i in range(len(R_of_tr_mae))], 
-    "Day 2;  Optimal MAE NN: R"    : [R_of_tr_mae[i][1] for i in range(len(R_of_tr_mae))], 
-    "Day 3;  Optimal MAE NN: R"    : [R_of_tr_mae[i][2] for i in range(len(R_of_tr_mae))], 
+    "Day 1;  Optimal MAE NN: R"    : R_of_tr_mae_0, 
+    "Day 2;  Optimal MAE NN: R"    : R_of_tr_mae_1, 
+    "Day 3;  Optimal MAE NN: R"    : R_of_tr_mae_2, 
 
-    "Day 1;  Optimal R NN: MAE"    : [mae_of_tr_R[i][0] for i in range(len(mae_of_tr_R))], 
-    "Day 2;  Optimal R NN: MAE"    : [mae_of_tr_R[i][1] for i in range(len(mae_of_tr_R))], 
-    "Day 3;  Optimal R NN: MAE"    : [mae_of_tr_R[i][2] for i in range(len(mae_of_tr_R))], 
+    "Day 1;  Optimal R NN: MAE"    : mae_of_tr_R_0, 
+    "Day 2;  Optimal R NN: MAE"    : mae_of_tr_R_1, 
+    "Day 3;  Optimal R NN: MAE"    : mae_of_tr_R_2, 
 
-    "Day 1;  Optimal MAE NN: MAE"    : [mae_of_tr_mae[i][0] for i in range(len(mae_of_tr_mae))], 
-    "Day 2;  Optimal MAE NN: MAE"    : [mae_of_tr_mae[i][1] for i in range(len(mae_of_tr_mae))], 
-    "Day 3;  Optimal MAE NN: MAE"    : [mae_of_tr_mae[i][2] for i in range(len(mae_of_tr_mae))], 
+    "Day 1;  Optimal MAE NN: MAE"    : mae_of_tr_mae_0, 
+    "Day 2;  Optimal MAE NN: MAE"    : mae_of_tr_mae_1, 
+    "Day 3;  Optimal MAE NN: MAE"    : mae_of_tr_mae_2, 
 
     })
 
