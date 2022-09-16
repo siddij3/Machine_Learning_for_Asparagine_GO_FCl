@@ -186,6 +186,36 @@ mae_history = []
 
 R_all = []
 
+
+# %% [markdown]
+# ##### Plotting Functions
+
+# %%
+
+def correlation_plots(model, label, input_data, title, xlabel, ylabel):
+
+  test_predictions = model.predict(input_data).flatten()
+  #plt.scatter(label,test_predictions)
+  #plt.plot(label, label, color='black', linestyle='solid')
+  
+  #plt.xlabel(xlabel)
+  #plt.ylabel(ylabel)
+  #plt.title(title)
+  #plt.axis('equal')
+  #plt.axis('square')
+  #plt.grid(True)
+  #plt.show()
+  return test_predictions
+
+
+def plotGraph(y_test, y_pred,regressorName):
+    #plt.scatter(range(len(y_pred)), y_test, color='blue')
+    #plt.scatter(range(len(y_pred)), y_pred, color='red')
+    #plt.title(regressorName)
+    #plt.show()
+    return
+
+
 # %% [markdown]
 # #### Where the Magic Happens
 
@@ -288,11 +318,20 @@ print(order_of_architecture[lowest_mae_index])
 print(order_of_architecture[highest_R_index])
 
 plt.plot(range(1, len(mae_history[lowest_mae_index]) + 1), mae_history[lowest_mae_index], label="Lowest MAE")
-
+#plt.plot(range(1, len(mae_history[highest_R_index][int(num_epochs/10):]) + 1), mae_history[highest_R_index][int(num_epochs/10):], label="Highest R")
+#plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+#plt.xlabel('Epochs')
+#plt.ylabel('Validation MAE')
+#plt.show()
 
 smooth_mae_history = smooth_curve(mae_history[lowest_mae_index])
 smooth_R_history = smooth_curve(mae_history[highest_R_index])
-
+#plt.plot(range(1, len(smooth_mae_history) + 1), smooth_mae_history, label="Lowest MAE")
+#plt.plot(range(1, len(smooth_R_history) + 1), smooth_R_history, label="Highest R")
+#plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+#plt.xlabel('Epochs')
+#plt.ylabel('Validation MAE')
+#plt.show()
 
 dict_epochs = pd.DataFrame({ 
     "Epochs" : range(1, len(mae_history[lowest_mae_index]) + 1),
@@ -369,6 +408,10 @@ def isolateParam(optimal_NNs, data, parameter, start_index, end_index, NN_start,
             
             tmp_mae.append(test_mae)
             
+
+            #correlation_plots(NN, param_labels[i], param_features[i], "Testing Correlation Plot for "+  parameter + ": " + str(i) + " " + mae_or_R, "Actual", "Predicted"
+                
+
             
         R.append(tmp_R)
         mae.append(tmp_mae)
@@ -451,6 +494,16 @@ def IsolateBinaryTime(optimal_NNs, data, parameter, start_time, batch, vbs, mae_
                 dict_title = "NN {} Correlation for {}: {} {}".format(j, parameter, i, mae_or_R)
                 _predictions = _predictions.append({dict_title: tmp_predictions}, ignore_index=True)
 
+                #_predictions = _predictions.append({str(j) + "Correlation for "+  str(parameter) + ": " + str(i) + " " + str(mae_or_R): model.predict(shared_features[i][j]).flatten()}, ignore_index=True)
+
+            #shared_predictions = correlation_plots(
+            #    NN, shared_labels[i][j], 
+            #    shared_features[i][j].to_numpy(),  
+            #    "Testing Correlation Plot for Shared " + str(j) + " at time: " + str(i) + " " + mae_or_R, 
+            #    "Actual", "Predicted"
+            #    )
+            
+            #plotGraph(shared_labels[i][j], shared_predictions, "Shared Plot")
 
             sc_tmp_mae.append(tmp_mae)
             sc_tmp_R.append(tmp_R)
@@ -487,6 +540,21 @@ NN_start_time = 1
 R_time_mae, mae_averages_time_mae = isolateParam(optimal_NNs_mae, dataset, 'Time', 0, 51, NN_start_time, param_batches, 1, "MAE")
 R_time_R, mae_averages_time_R = isolateParam(optimal_NNs_R, dataset, 'Time', 0, 51, NN_start_time, param_batches, 1, "R")
 
+# %%
+#plt.plot(range(NN_start_time, len(mae_averages_time_mae) +NN_start_time), mae_averages_time_mae, label="Time Isolating; Optimal MAE Network")
+#plt.plot(range(NN_start_time, len(mae_averages_time_R) +NN_start_time), mae_averages_time_R, label="Time Isolating; Optimal R Network")
+#plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+#plt.xlabel('Time (s)')
+#plt.ylabel('Mean Absolute Error')
+#plt.show()
+
+#plt.plot(range(NN_start_time, len(R_time_mae) +NN_start_time), R_time_mae, label="Time Isolating; Optimal MAE Network")
+#plt.plot(range(NN_start_time, len(R_time_R) +NN_start_time), R_time_R, label="Time Isolating; Optimal R Network")
+#plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+#plt.xlabel('Time (s)')
+#plt.ylabel('R')
+#plt.show()
+
 
 # %% [markdown]
 # #### Isolating Spin Coating and Time
@@ -518,6 +586,29 @@ for i in range(len(R_of_sct_mae)):
     mae_of_averages_sct_R_1.append(mae_of_sct_R[i][1])
     mae_of_averages_sct_R_0.append(mae_of_sct_R[i][0])
 
+#plt.plot(range(NN_start_sc_t, len(mae_of_averages_sct_mae_1) +NN_start_sc_t), mae_of_averages_sct_mae_1, label="Spin Coating; Optimal MAE Network")
+#plt.plot(range(NN_start_sc_t, len(mae_of_averages_sct_mae_0) +NN_start_sc_t), mae_of_averages_sct_mae_0, label="No Spin Coating; Optimal MAE Network")
+
+#plt.plot(range(NN_start_sc_t, len(mae_of_averages_sct_R_1) +NN_start_sc_t), mae_of_averages_sct_R_1, label="Spin Coating; Optimal R Network")
+#plt.plot(range(NN_start_sc_t, len(mae_of_averages_sct_R_0) +NN_start_sc_t), mae_of_averages_sct_R_0, label="No Spin Coating; Optimal R Network")
+
+#plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+#plt.xlabel('Time (s)')
+#plt.ylabel('Mean Absolute Error')
+#plt.show()
+
+#plt.plot(range(NN_start_sc_t, len(R_of_mins_sct_mae_1) +NN_start_sc_t), R_of_mins_sct_mae_1, label="Spin Coating; Optimal MAE Network")
+#plt.plot(range(NN_start_sc_t, len(R_of_mins_sct_mae_0) +NN_start_sc_t), R_of_mins_sct_mae_0, label="No Spin Coating; Optimal MAE Network")
+
+#plt.plot(range(NN_start_sc_t, len(R_of_mins_sct_R_1) +NN_start_sc_t), R_of_mins_sct_R_1, label="Spin Coating; Optimal R Network")
+#plt.plot(range(NN_start_sc_t, len(R_of_mins_sct_R_0) +NN_start_sc_t), R_of_mins_sct_R_0, label="No Spin Coating; Optimal R Network")
+
+#plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+#plt.xlabel('Time (s)')
+#plt.ylabel('R')
+#plt.show()
+
+
 
 # %% [markdown]
 # #### Isolating Increasing PPM and Time
@@ -548,6 +639,32 @@ for i in range(len(R_of_increasing_mae)):
 
     mae_of_increasing_R_1.append(mae_of_increasing_R[i][1])
     mae_of_increasing_R_0.append(mae_of_increasing_R[i][0])
+
+
+
+#plt.plot(range(NN_start_sc_t, len(mae_of_increasing_mae_1) +NN_start_sc_t), mae_of_increasing_mae_1, label="Increasing PPM; Optimal MAE Network")
+#plt.plot(range(NN_start_sc_t, len(mae_of_increasing_mae_0) +NN_start_sc_t), mae_of_increasing_mae_0, label=" Decreasing PPM; Optimal MAE Network")#
+
+#plt.plot(range(NN_start_sc_t, len(mae_of_increasing_R_1) +NN_start_sc_t), mae_of_increasing_R_1, label="Increasing PPM; Optimal R Network")
+#plt.plot(range(NN_start_sc_t, len(mae_of_increasing_R_0) +NN_start_sc_t), mae_of_increasing_R_0, label="Decreasing PPM; Optimal R Network")
+
+#plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+#plt.xlabel('Time (s)')
+#plt.ylabel('Mean Absolute Error')
+#plt.show()
+
+#plt.plot(range(NN_start_sc_t, len(R_of_increasing_mae_1) +NN_start_sc_t), R_of_increasing_mae_1, label="Increasing PPM; Optimal MAE Network")
+#plt.plot(range(NN_start_sc_t, len(R_of_increasing_mae_0) +NN_start_sc_t), R_of_increasing_mae_0, label="Decreasing PPM; Optimal MAE Network")
+
+#plt.plot(range(NN_start_sc_t, len(R_of_increasing_R_1) +NN_start_sc_t), R_of_increasing_R_1, label="Increasing PPM; Optimal R Network")
+#plt.plot(range(NN_start_sc_t, len(R_of_increasing_R_0) +NN_start_sc_t), R_of_increasing_R_0, label="Decreasing PPM; Optimal R Network")
+
+#plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+#plt.xlabel('Time (s)')
+#plt.ylabel('R')
+#plt.show()
+
+
 
 # %% [markdown]
 # #### Repeat Sensor Use
@@ -711,6 +828,34 @@ for i in range(len(R_of_tr_mae)):
     mae_of_tr_R_0.append(mae_of_tr_R[i][0])
     mae_of_tr_R_1.append(mae_of_tr_R[i][1])
     mae_of_tr_R_2.append(mae_of_tr_R[i][2])
+
+
+
+#plt.plot(range(start_time, len(mae_of_tr_mae_0) +start_time), mae_of_tr_mae_0, label="Day 1; Optimal MAE Network")
+#plt.plot(range(start_time, len(mae_of_tr_mae_1) +start_time), mae_of_tr_mae_1, label=" Day 2; Optimal MAE Network")
+#plt.plot(range(start_time, len(mae_of_tr_mae_2) +start_time), mae_of_tr_mae_2, label=" Day 3; Optimal MAE Network")
+
+#plt.plot(range(start_time, len(mae_of_tr_R_0) +start_time), mae_of_tr_R_0, label="Day 1; Optimal R Network")
+#plt.plot(range(start_time, len(mae_of_tr_R_1) +start_time), mae_of_tr_R_1, label="Day 2; Optimal R Network")
+#plt.plot(range(start_time, len(mae_of_tr_R_2) +start_time), mae_of_tr_R_2, label="Day 3; Optimal R Network")
+
+#plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+#plt.xlabel('Time (s)')
+#plt.ylabel('Mean Absolute Error')
+#plt.show()
+
+#plt.plot(range(start_time, len(R_of_tr_mae_0) +start_time), R_of_tr_mae_0, label="Day 1; Optimal MAE Network")
+#plt.plot(range(start_time, len(R_of_tr_mae_1) +start_time), R_of_tr_mae_1, label="Day 2; Optimal MAE Network")
+#plt.plot(range(start_time, len(R_of_tr_mae_2) +start_time), R_of_tr_mae_2, label="Day 3; Optimal MAE Network")
+
+#plt.plot(range(start_time, len(R_of_tr_R_0) +start_time), R_of_tr_R_0, label="Day 1; Optimal R Network")
+#plt.plot(range(start_time, len(R_of_tr_R_1) +start_time), R_of_tr_R_1, label="Day 2; Optimal R Network")
+#plt.plot(range(start_time, len(R_of_tr_R_2) +start_time), R_of_tr_R_2, label="Day 3; Optimal R Network")
+
+#plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+#plt.xlabel('Time (s)')
+#plt.ylabel('R')
+#plt.show()
 
 
 
