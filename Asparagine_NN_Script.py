@@ -33,7 +33,6 @@ dataset = pd.read_csv('aggregated_data.csv')
 
 dataset = shuffle(dataset)
 std_scaler = StandardScaler()
-session = tf.compat.v1.ConfigProto(intra_op_parallelism_threads=4, inter_op_parallelism_threads=4)
 
 # %%
 def importData(data, scaler):
@@ -75,7 +74,6 @@ def importData(data, scaler):
     data_labels = data.pop('Concentration')
 
     return data, data_labels, train_dataset, test_dataset, train_features, test_features, train_labels, test_labels, 
-#sns.pairplot(train_dataset[['Time','Current', 'Spin Coating', 'Increasing PPM', 'Temperature', 'Repeat Sensor Use', 'Days Elapsed', 'Concentration']], diag_kind='kde')
 
 
 # %% [markdown]
@@ -85,11 +83,10 @@ def importData(data, scaler):
 # ### Functions: Build NN Model, Fit Model, K Cross Validation, Pearson Correlation Coefficient
 
 # %%
-def build_model(n1, n2, train_feats):
+def build_model(n1, n2):
   #Experiment with different models, thicknesses, layers, activation functions; Don't limit to only 10 nodes; Measure up to 64 nodes in 2 layers
   model = keras.Sequential([
-    layers.Dense(n1, activation=tf.nn.relu, input_shape=[len(train_feats.keys())]),
-    layers.Dense(n2, activation=tf.nn.relu),
+    layers.Dense(n1, activation=tf.nn.relu, input_shape=[7]),
     layers.Dense(n2, activation=tf.nn.relu),
     layers.Dense(1)
   ])
@@ -98,18 +95,7 @@ def build_model(n1, n2, train_feats):
   model.compile(loss='mse', optimizer=optimizer, metrics=['mae','mse'])
   early_stop = keras.callbacks.EarlyStopping(monitor='val_loss',patience=5)
 
-  return model
-
-def model_history(features, labels, model, epo, batch, vbs):
-  
-    history = model.fit(
-        features, labels,
-        epochs=epo, batch_size=batch, validation_split=0.2, verbose=vbs #, callbacks=early_stop
-    )
-
-    hist = pd.DataFrame(history.history)
-    
-    return hist
+  return model, early_stop
 
 def KCrossValidation(i, features, labels, num_val_samples, epochs, batch, verbose, n1, n2):
 
@@ -120,18 +106,25 @@ def KCrossValidation(i, features, labels, num_val_samples, epochs, batch, verbos
     partial_train_data = np.concatenate([features[:i * num_val_samples], features[(i + 1) * num_val_samples:]], axis=0)
     partial_train_targets = np.concatenate([labels[:i * num_val_samples], labels[(i + 1) * num_val_samples:]],     axis=0)
 
-    model = build_model(n1, n2, features)
+    model, early_stop = build_model(n1, n2)
 
-    history = model_history(partial_train_data, partial_train_targets, model, epochs, batch, verbose)
+    history = model.fit(
+        partial_train_data, partial_train_targets,
+        epochs=epochs, batch_size=batch, validation_split=0.2, verbose=verbose #, callbacks=early_stop
+    )
+
+    history = pd.DataFrame(history.history)
+
 
     test_loss, test_mae, test_mse = model.evaluate(val_data, val_targets, verbose=verbose)
+    test_R, y = Pearson(model, val_data, val_targets.to_numpy(), batch, verbose )
 
-    return model, history, test_loss, test_mae, test_mse
+    return model, history, test_loss, test_mae, test_mse, test_R
 
 def Pearson(model, features, y_true, batch, verbose_):
     y_pred = model.predict(
         features,
-        batch_size=None,
+        batch_size=batch,
         verbose=verbose_,
         workers=3,
         use_multiprocessing=False,
@@ -149,61 +142,43 @@ def Pearson(model, features, y_true, batch, verbose_):
 
     R = tmp_numerator / (math.sqrt(tmp_denominator_pred) * math.sqrt(tmp_denominator_real))
 
-    return R
+    return R[0], y_pred
 
 # %% [markdown]
 # ## NEURAL NETWORK PARAMETERS
 
 # %%
 all_features, data_labels, train_dataset, test_dataset, train_features, test_features, train_labels, test_labels,  = importData(dataset.copy(), std_scaler)
-k_folds = 4 #4
-num_val_samples= len(train_labels) // k_folds
+k_folds = 4 
+num_val_samples = len(train_labels) // k_folds
 
-n1_start = 8 #8
-n2_start = 8 #8
-sum_nodes = 17 #64
+n1_start = n2_start = 8 #8
+sum_nodes = 16 #48
 
-num_epochs = 10 #400
-batch_size = 100 #100
+num_epochs = 100 #500
+batch_size = 20 #50
 verbose = 0
+
+print("\n")
+print("Number Folds: ", k_folds)
+print("Initial Layers N1: ", n1_start)
+print("Initial Layers N2: ", n2_start)
+print("Total Layers: ", sum_nodes)
+print("Epochs: ", num_epochs)
+print("Batch Size: ", batch_size)
+print("\n")
+
 avg_val_scores = []
 order_of_architecture = []
+
+dict_lowest_MAE  = {} 
+dict_highest_R = {}
 
 all_networks  = []
 all_history  = []
 mae_history = []
 
 R_all = []
-
-
-# %% [markdown]
-# ##### Plotting Functions
-
-# %%
-
-def correlation_plots(model, label, input_data, title, xlabel, ylabel):
-
-  test_predictions = model.predict(input_data).flatten()
-  #plt.scatter(label,test_predictions)
-  #plt.plot(label, label, color='black', linestyle='solid')
-  
-  #plt.xlabel(xlabel)
-  #plt.ylabel(ylabel)
-  #plt.title(title)
-  #plt.axis('equal')
-  #plt.axis('square')
-  #plt.grid(True)
-  #plt.show()
-  return test_predictions
-
-
-def plotGraph(y_test, y_pred,regressorName):
-    #plt.scatter(range(len(y_pred)), y_test, color='blue')
-    #plt.scatter(range(len(y_pred)), y_pred, color='red')
-    #plt.title(regressorName)
-    #plt.show()
-    return
-
 
 # %% [markdown]
 # #### Where the Magic Happens
@@ -221,12 +196,11 @@ for i in range(n1_start, sum_nodes):
         k_fold_test_scores = []
         k_models = []
         k_history = []
-
         k_mae_history = []
         R_tmp = []
 
         for fold in range(k_folds):
-            model, history, test_loss, test_mae, test_mse = KCrossValidation(
+            model, history, test_loss, test_mae, test_mse, test_R = KCrossValidation(
                 fold, 
                 train_features, 
                 train_labels, 
@@ -237,7 +211,7 @@ for i in range(n1_start, sum_nodes):
                 j, 
                 i)
 
-            R_tmp.append(Pearson(model, train_features, train_labels.to_numpy(), batch_size, verbose )[0])
+            R_tmp.append(test_R)
             k_fold_test_scores.append(test_mae)
             
             k_history.append(history)
@@ -246,7 +220,12 @@ for i in range(n1_start, sum_nodes):
 
 
         R_all.append(sum(R_tmp)/len(R_tmp))
+        dict_highest_R['R: {}, {}'.format(j, i)] = R_all[-1]
+
         avg_val_scores.append(sum(k_fold_test_scores)/len(k_fold_test_scores))
+        dict_lowest_MAE['MAE: {}, {}'.format(j, i)] = avg_val_scores[-1]
+
+
         all_history.append(k_history)
         all_networks.append(k_models)
 
@@ -255,7 +234,14 @@ for i in range(n1_start, sum_nodes):
         order_of_architecture.append([i, j])
 
 
+        mae_history.append([ np.mean([x[i] for x in k_mae_history]) for i in range(num_epochs)])
 
+
+dict_lowest_MAE = pd.DataFrame(dict_lowest_MAE, index = [0])
+dict_highest_R = pd.DataFrame(dict_highest_R, index = [0])
+
+df_R_MAE = dict_highest_R.append(dict_lowest_MAE, ignore_index=True)
+df_R_MAE.to_csv('R, MAE - Sum {} - Epochs {} - Folds {}.csv'.format(sum_nodes, num_epochs, k_folds), index=False)
 
 
 # %% [markdown]
@@ -290,24 +276,14 @@ def smooth_curve(points, factor=0.8):
             smoothed_points.append(point)
     return smoothed_points
 
-print(order_of_architecture[lowest_mae_index])
-print(order_of_architecture[highest_R_index])
+print(order_of_architecture[lowest_mae_index], order_of_architecture[highest_R_index])
 
 plt.plot(range(1, len(mae_history[lowest_mae_index]) + 1), mae_history[lowest_mae_index], label="Lowest MAE")
-#plt.plot(range(1, len(mae_history[highest_R_index][int(num_epochs/10):]) + 1), mae_history[highest_R_index][int(num_epochs/10):], label="Highest R")
-#plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-#plt.xlabel('Epochs')
-#plt.ylabel('Validation MAE')
-#plt.show()
+
 
 smooth_mae_history = smooth_curve(mae_history[lowest_mae_index])
 smooth_R_history = smooth_curve(mae_history[highest_R_index])
-#plt.plot(range(1, len(smooth_mae_history) + 1), smooth_mae_history, label="Lowest MAE")
-#plt.plot(range(1, len(smooth_R_history) + 1), smooth_R_history, label="Highest R")
-#plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-#plt.xlabel('Epochs')
-#plt.ylabel('Validation MAE')
-#plt.show()
+
 
 dict_epochs = pd.DataFrame({ 
     "Epochs" : range(1, len(mae_history[lowest_mae_index]) + 1),
@@ -320,6 +296,8 @@ dict_epochs = pd.DataFrame({
     })
 
 dict_epochs.to_csv('epochs - {} - {} - {}.csv'.format(sum_nodes, num_epochs, 1), index=False)
+
+del mae_history, all_networks, all_history
 
 # %% [markdown]
 # Scaling Data Set Function
@@ -351,7 +329,7 @@ def isolateParam(optimal_NNs, data, parameter, start_index, end_index, NN_start,
 
     scaled_features = scaleDataset(all_features.copy())
     #The full features of the data points that use certain time values
-    param_features = []
+    param_features =  []
     param_labels = []
 
     for i in range(start_index, end_index):
@@ -360,12 +338,13 @@ def isolateParam(optimal_NNs, data, parameter, start_index, end_index, NN_start,
         param_labels.append(data_labels.to_numpy()[param_index[i]])
 
 
-    mae = []
-    R = []
+    mae = R = []
+    _predictions = {}
     for i in range(NN_start, end_index):
         tmp_mae = []
         tmp_R = []
         
+        j = 0
         for NN in optimal_NNs:
             test_loss, test_mae, test_mse = NN.evaluate(
                 param_features[i], 
@@ -374,19 +353,14 @@ def isolateParam(optimal_NNs, data, parameter, start_index, end_index, NN_start,
                 verbose=verbose
                 )
 
-            tmp_R.append(Pearson(NN, param_features[i], param_labels[i], batch, verbose)[0])
+            tmp, tmp_predictions = Pearson(NN, param_features[i], param_labels[i], batch, verbose) 
+            tmp_R.append(tmp)
+
+            dict_title = "NN {} Correlation for {}: {} {}".format(j, parameter, i, mae_or_R)
+            _predictions[dict_title] = tmp_predictions
             
             tmp_mae.append(test_mae)
             
-            _predictions = correlation_plots(
-                NN, 
-                param_labels[i], 
-                param_features[i], 
-                "Testing Correlation Plot for "+  parameter + ": " + str(i) + " " + mae_or_R, 
-                "Actual", 
-                "Predicted"
-                )
-
             
         R.append(tmp_R)
         mae.append(tmp_mae)
@@ -396,7 +370,6 @@ def isolateParam(optimal_NNs, data, parameter, start_index, end_index, NN_start,
     for i in range(len(mae)):
         average_R.append(sum(R[i])/len(R[i]))
         average_mae.append(sum(mae[i])/len(mae[i]))
-
 
     return average_R, average_mae
 
@@ -409,8 +382,6 @@ def IsolateBinaryTime(optimal_NNs, data, parameter, start_time, batch, vbs, mae_
     ss_0 = np.where(data[parameter].to_numpy()  ==  0)[0]
 
     times_index = []
-    times_0 = []
-
     shared_time_1 = []
     shared_time_0 = []
 
@@ -449,6 +420,7 @@ def IsolateBinaryTime(optimal_NNs, data, parameter, start_time, batch, vbs, mae_
 
     shared_mae = []
     shared_R = []
+    _predictions = {}
     for i in range(start_time, 51):
         sc_tmp_mae = []
         sc_tmp_R = []
@@ -456,7 +428,6 @@ def IsolateBinaryTime(optimal_NNs, data, parameter, start_time, batch, vbs, mae_
         for j in range(0, 2):
             tmp_mae = []
             tmp_R = []
-            #print("TIME = ", i, "S", "SPINCOATED = ", j)
 
             for NN in optimal_NNs:
                 test_loss, test_mae, test_mse = NN.evaluate(
@@ -465,21 +436,15 @@ def IsolateBinaryTime(optimal_NNs, data, parameter, start_time, batch, vbs, mae_
                     batch_size=batch,  
                     verbose=vbs
                     )
-            
-                tmp_R.append(Pearson(NN, shared_features[i][j], shared_labels[i][j], batch, vbs)[0])
+
+                tmp, tmp_predictions = Pearson(NN, shared_features[i][j], shared_labels[i][j], batch, verbose) 
+                tmp_R.append(tmp)
+
                 tmp_mae.append(test_mae)
 
-                    
-            shared_predictions = correlation_plots(
-                NN, shared_labels[i][j], 
-                shared_features[i][j].to_numpy(),  
-                "Testing Correlation Plot for Shared " + str(j) + " at time: " + str(i) + " " + mae_or_R, 
-                "Actual", "Predicted"
-                )
-            
+                dict_title = "NN {} Correlation for {}: {} {}".format(j, parameter, i, mae_or_R)
+                _predictions[dict_title] = tmp_predictions[0]
 
-
-            #plotGraph(shared_labels[i][j], shared_predictions, "Shared Plot")
 
             sc_tmp_mae.append(tmp_mae)
             sc_tmp_R.append(tmp_R)
@@ -496,152 +461,18 @@ def IsolateBinaryTime(optimal_NNs, data, parameter, start_time, batch, vbs, mae_
     for i in shared_R:
         averages_R.append([sum(i[0])/len(i[0]), sum(i[1])/len(i[1])])
 
-
     return averages_R, averages_mae
-
-# %% [markdown]
-# #### Isolating Spin Coating
-
-# %%
-R_of_sc_mae, mae_of_sc_mae = isolateParam(optimal_NNs_mae, dataset, 'Spin Coating', 0, 2, 0, 10, 1, "MAE")
-R_of_sc_R, mae_of_sc_R = isolateParam(optimal_NNs_R, dataset, 'Spin Coating', 0, 2, 0, 10, 1, "R")
-
-
-# %% [markdown]
-# #### Isolating Time
-
-# %%
-NN_start_time = 20
-R_time_mae, mae_averages_time_mae = isolateParam(optimal_NNs_mae, dataset, 'Time', 0, 51, NN_start_time, 100, 1, "MAE")
-R_time_R, mae_averages_time_R = isolateParam(optimal_NNs_R, dataset, 'Time', 0, 51, NN_start_time, 100, 1, "R")
-
-# %%
-#plt.plot(range(NN_start_time, len(mae_averages_time_mae) +NN_start_time), mae_averages_time_mae, label="Time Isolating; Optimal MAE Network")
-#plt.plot(range(NN_start_time, len(mae_averages_time_R) +NN_start_time), mae_averages_time_R, label="Time Isolating; Optimal R Network")
-#plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-#plt.xlabel('Time (s)')
-#plt.ylabel('Mean Absolute Error')
-#plt.show()
-
-#plt.plot(range(NN_start_time, len(R_time_mae) +NN_start_time), R_time_mae, label="Time Isolating; Optimal MAE Network")
-#plt.plot(range(NN_start_time, len(R_time_R) +NN_start_time), R_time_R, label="Time Isolating; Optimal R Network")
-#plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-#plt.xlabel('Time (s)')
-#plt.ylabel('R')
-#plt.show()
-
-
-# %% [markdown]
-# #### Isolating Spin Coating and Time
-
-# %%
-verbose_isolate = 0
-NN_start_sc_t = 15
-R_of_sct_mae, mae_of_sct_mae = IsolateBinaryTime(optimal_NNs_mae,dataset, 'Spin Coating', NN_start_sc_t, 10, verbose_isolate, "MAE")
-R_of_sct_R, mae_of_sct_R = IsolateBinaryTime(optimal_NNs_R, dataset, 'Spin Coating', NN_start_sc_t, 10, verbose_isolate, "R")
-
-
-# %%
-R_of_mins_sct_mae_1 = [R_of_sct_mae[i][1] for i in range(len(R_of_sct_mae))]
-R_of_mins_sct_mae_0 = [R_of_sct_mae[i][0] for i in range(len(R_of_sct_mae))]
-
-mae_of_averages_sct_mae_1 = [mae_of_sct_mae[i][1] for i in range(len(mae_of_sct_mae))]
-mae_of_averages_sct_mae_0 = [mae_of_sct_mae[i][0] for i in range(len(mae_of_sct_mae))]
-
-R_of_mins_sct_R_1 = [R_of_sct_R[i][1] for i in range(len(R_of_sct_R))]
-R_of_mins_sct_R_0 = [R_of_sct_R[i][0] for i in range(len(R_of_sct_R))]
-
-mae_of_averages_sct_R_1 = [mae_of_sct_R[i][1] for i in range(len(mae_of_sct_R))]
-mae_of_averages_sct_R_0 = [mae_of_sct_R[i][0] for i in range(len(mae_of_sct_R))]
-
-
-#plt.plot(range(NN_start_sc_t, len(mae_of_averages_sct_mae_1) +NN_start_sc_t), mae_of_averages_sct_mae_1, label="Spin Coating; Optimal MAE Network")
-#plt.plot(range(NN_start_sc_t, len(mae_of_averages_sct_mae_0) +NN_start_sc_t), mae_of_averages_sct_mae_0, label="No Spin Coating; Optimal MAE Network")
-
-#plt.plot(range(NN_start_sc_t, len(mae_of_averages_sct_R_1) +NN_start_sc_t), mae_of_averages_sct_R_1, label="Spin Coating; Optimal R Network")
-#plt.plot(range(NN_start_sc_t, len(mae_of_averages_sct_R_0) +NN_start_sc_t), mae_of_averages_sct_R_0, label="No Spin Coating; Optimal R Network")
-
-#plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-#plt.xlabel('Time (s)')
-#plt.ylabel('Mean Absolute Error')
-#plt.show()
-
-#plt.plot(range(NN_start_sc_t, len(R_of_mins_sct_mae_1) +NN_start_sc_t), R_of_mins_sct_mae_1, label="Spin Coating; Optimal MAE Network")
-#plt.plot(range(NN_start_sc_t, len(R_of_mins_sct_mae_0) +NN_start_sc_t), R_of_mins_sct_mae_0, label="No Spin Coating; Optimal MAE Network")
-
-#plt.plot(range(NN_start_sc_t, len(R_of_mins_sct_R_1) +NN_start_sc_t), R_of_mins_sct_R_1, label="Spin Coating; Optimal R Network")
-#plt.plot(range(NN_start_sc_t, len(R_of_mins_sct_R_0) +NN_start_sc_t), R_of_mins_sct_R_0, label="No Spin Coating; Optimal R Network")
-
-#plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-#plt.xlabel('Time (s)')
-#plt.ylabel('R')
-#plt.show()
-
-
-
-# %% [markdown]
-# #### Isolating Increasing PPM and Time
-
-# %%
-verbose_isolate = 1
-start_t_increasing = 5
-
-R_of_increasing_mae, mae_of_increasing_mae = IsolateBinaryTime(optimal_NNs_mae, dataset, 'Increasing PPM', start_t_increasing, 10, verbose_isolate, "MAE")
-R_of_increasing_R, mae_of_increasing_R = IsolateBinaryTime(optimal_NNs_R, dataset, 'Increasing PPM', start_t_increasing, 10, verbose_isolate, "R")
-
-
-# %%
-R_of_increasing_mae_1 = [R_of_increasing_mae[i][1] for i in range(len(R_of_increasing_mae))]
-R_of_increasing_mae_0 = [R_of_increasing_mae[i][0] for i in range(len(R_of_increasing_mae))]
-
-mae_of_increasing_mae_1 = [mae_of_increasing_mae[i][1] for i in range(len(mae_of_increasing_mae))]
-mae_of_increasing_mae_0 = [mae_of_increasing_mae[i][0] for i in range(len(mae_of_increasing_mae))]
-
-R_of_increasing_R_1 = [R_of_increasing_R[i][1] for i in range(len(R_of_increasing_R))]
-R_of_increasing_R_0 = [R_of_increasing_R[i][0] for i in range(len(R_of_increasing_R))]
-
-mae_of_increasing_R_1 = [mae_of_increasing_R[i][1] for i in range(len(mae_of_increasing_R))]
-mae_of_increasing_R_0 = [mae_of_increasing_R[i][0] for i in range(len(mae_of_increasing_R))]
-
-
-#plt.plot(range(NN_start_sc_t, len(mae_of_increasing_mae_1) +NN_start_sc_t), mae_of_increasing_mae_1, label="Increasing PPM; Optimal MAE Network")
-#plt.plot(range(NN_start_sc_t, len(mae_of_increasing_mae_0) +NN_start_sc_t), mae_of_increasing_mae_0, label=" Decreasing PPM; Optimal MAE Network")#
-
-#plt.plot(range(NN_start_sc_t, len(mae_of_increasing_R_1) +NN_start_sc_t), mae_of_increasing_R_1, label="Increasing PPM; Optimal R Network")
-#plt.plot(range(NN_start_sc_t, len(mae_of_increasing_R_0) +NN_start_sc_t), mae_of_increasing_R_0, label="Decreasing PPM; Optimal R Network")
-
-#plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-#plt.xlabel('Time (s)')
-#plt.ylabel('Mean Absolute Error')
-#plt.show()
-
-#plt.plot(range(NN_start_sc_t, len(R_of_increasing_mae_1) +NN_start_sc_t), R_of_increasing_mae_1, label="Increasing PPM; Optimal MAE Network")
-#plt.plot(range(NN_start_sc_t, len(R_of_increasing_mae_0) +NN_start_sc_t), R_of_increasing_mae_0, label="Decreasing PPM; Optimal MAE Network")
-
-#plt.plot(range(NN_start_sc_t, len(R_of_increasing_R_1) +NN_start_sc_t), R_of_increasing_R_1, label="Increasing PPM; Optimal R Network")
-#plt.plot(range(NN_start_sc_t, len(R_of_increasing_R_0) +NN_start_sc_t), R_of_increasing_R_0, label="Decreasing PPM; Optimal R Network")
-
-#plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-#plt.xlabel('Time (s)')
-#plt.ylabel('R')
-#plt.show()
-
-
 
 # %% [markdown]
 # #### Repeat Sensor Use
 
 # %%
 def repeatSensor(optimal_NNs, data, parameter1, parameter2, start_index, end_index, start_time, batch, vbs, mae_or_R):
-#def isolateParam(optimal_NNs, data, parameter, start_index, end_index, NN_start, batch, verbose, mae_or_R):
 
     # Split the data labels with RSU
     repeat_index= []
     for i in range(start_index, end_index):
-    #for i in range(1, 4):
-
         repeat_index.append(np.where(data[parameter1].to_numpy()  == i+1)[0])
-        #repeat_index.append(np.where(data['Repeat Sensor Use'].to_numpy()  == i)[0])
 
     shared_tr_1 = []
     shared_tr_2 = []
@@ -650,7 +481,6 @@ def repeatSensor(optimal_NNs, data, parameter1, parameter2, start_index, end_ind
     times_index = []
     for i in range(0, 51):
         times_index.append(np.where(data[parameter2].to_numpy()  == i)[0].tolist())
-        #times_index.append(np.where(data['Time'].to_numpy()  == i)[0].tolist())
 
         tr_1_tmp = []
         tr_2_tmp = []
@@ -666,9 +496,6 @@ def repeatSensor(optimal_NNs, data, parameter1, parameter2, start_index, end_ind
                     tr_2_tmp.append(index_123)
                 elif index_123 in times_index[i] and j == 2:
                     tr_3_tmp.append(index_123)
-
-    #            time_0_tmp.append(index_sc)
-            
 
         shared_tr_1.append(tr_1_tmp)
         shared_tr_2.append(tr_2_tmp)
@@ -693,12 +520,13 @@ def repeatSensor(optimal_NNs, data, parameter1, parameter2, start_index, end_ind
             data_labels.to_numpy()[shared_tr_3[i]]
             ])
 
+
     tr_mae = []
     tr_R = []
+    _predictions = {}
     for i in range(start_time, 51):
         tr_tmp_mae = []
         tr_tmp_R = []
-
         for j in range(start_index, end_index):
 
             tmp_mae = []
@@ -707,11 +535,15 @@ def repeatSensor(optimal_NNs, data, parameter1, parameter2, start_index, end_ind
             for NN in optimal_NNs:
                 test_loss, test_mae, test_mse = NN.evaluate(tr_features[i][j], tr_labels[i][j], batch_size=batch,  verbose=vbs)
                 
-                tmp_R.append(Pearson(NN, tr_features[i][j], tr_labels[i][j], batch, vbs)[0])
+
+                tmp, tmp_predictions = Pearson(NN, tr_features[i][j], tr_labels[i][j], batch, verbose) 
+                tmp_R.append(tmp)
+
                 tmp_mae.append(test_mae)
 
-                #repeat_predictions = correlation_plots(NN, repeat_labels[i], repeat_features[i], "Testing Correlation Plot for RSU " + str(i), "Actual", "Predicted")
-                #plotGraph(RSU_labels[i], RSU_predictions, "RSU Plot")
+                dict_title = "NN {} Correlation for {}, {}: {} {}".format(j, parameter1, parameter2, i, mae_or_R)
+                _predictions[dict_title] = tmp_predictions[0]
+
 
             tr_tmp_mae.append(tmp_mae)
             tr_tmp_R.append(tmp_R)
@@ -733,12 +565,16 @@ def repeatSensor(optimal_NNs, data, parameter1, parameter2, start_index, end_ind
     return averages_R, averages_mae
 
 # %%
-batch_repeat = 100
-verbose_repeat = 0
+
+verbose_repeat = 1
 start_index= 0
 end_index = 3
-start_time = 5
 
+start_time = 1
+param_batches = 10
+
+str_R = "R"
+str_MAE = "MAE"
 
 R_of_tr_mae, mae_of_tr_mae = repeatSensor(
     optimal_NNs_mae, 
@@ -748,7 +584,7 @@ R_of_tr_mae, mae_of_tr_mae = repeatSensor(
     start_index, 
     end_index, 
     start_time, 
-    batch_repeat, 
+    param_batches, 
     verbose_repeat, 
     "MAE"
     )
@@ -761,56 +597,137 @@ R_of_tr_R, mae_of_tr_R = repeatSensor(
     start_index, 
     end_index, 
     start_time, 
-    batch_repeat, 
+    param_batches, 
     verbose_repeat, 
     "R"
     )
 
 
 
+# %% [markdown]
+# #### Isolating Spin Coating
+
+
+
 # %%
-R_of_tr_mae_0 = [R_of_tr_mae[i][0] for i in range(len(R_of_tr_mae))]
-R_of_tr_mae_1 = [R_of_tr_mae[i][1] for i in range(len(R_of_tr_mae))]
-R_of_tr_mae_2 = [R_of_tr_mae[i][2] for i in range(len(R_of_tr_mae))]
+R_of_sc_mae, mae_of_sc_mae = isolateParam(optimal_NNs_mae, dataset, 'Spin Coating', 0, 2, 0, param_batches, 1, str_MAE)
+R_of_sc_R, mae_of_sc_R = isolateParam(optimal_NNs_R, dataset, 'Spin Coating', 0, 2, 0, param_batches, 1, str_R)
 
-mae_of_tr_mae_0 = [mae_of_tr_mae[i][0] for i in range(len(mae_of_tr_mae))]
-mae_of_tr_mae_1 = [mae_of_tr_mae[i][1] for i in range(len(mae_of_tr_mae))]
-mae_of_tr_mae_2 = [mae_of_tr_mae[i][2] for i in range(len(mae_of_tr_mae))]
+# %% [markdown]
+# #### Isolating Time
 
-R_of_tr_R_0 = [R_of_tr_R[i][0] for i in range(len(R_of_tr_R))]
-R_of_tr_R_1 = [R_of_tr_R[i][1] for i in range(len(R_of_tr_R))]
-R_of_tr_R_2 = [R_of_tr_R[i][2] for i in range(len(R_of_tr_R))]
-
-mae_of_tr_R_0 = [mae_of_tr_R[i][0] for i in range(len(mae_of_tr_R))]
-mae_of_tr_R_1 = [mae_of_tr_R[i][1] for i in range(len(mae_of_tr_R))]
-mae_of_tr_R_2 = [mae_of_tr_R[i][2] for i in range(len(mae_of_tr_R))]
+# %%
+NN_start_time = 1
+R_time_mae, mae_averages_time_mae = isolateParam(optimal_NNs_mae, dataset, 'Time', 0, 51, NN_start_time, param_batches, 1, str_MAE)
+R_time_R, mae_averages_time_R = isolateParam(optimal_NNs_R, dataset, 'Time', 0, 51, NN_start_time, param_batches, 1, str_R)
 
 
-#plt.plot(range(start_time, len(mae_of_tr_mae_0) +start_time), mae_of_tr_mae_0, label="Day 1; Optimal MAE Network")
-#plt.plot(range(start_time, len(mae_of_tr_mae_1) +start_time), mae_of_tr_mae_1, label=" Day 2; Optimal MAE Network")
-#plt.plot(range(start_time, len(mae_of_tr_mae_2) +start_time), mae_of_tr_mae_2, label=" Day 3; Optimal MAE Network")
+# %% [markdown]
+# #### Isolating Spin Coating and Time
 
-#plt.plot(range(start_time, len(mae_of_tr_R_0) +start_time), mae_of_tr_R_0, label="Day 1; Optimal R Network")
-#plt.plot(range(start_time, len(mae_of_tr_R_1) +start_time), mae_of_tr_R_1, label="Day 2; Optimal R Network")
-#plt.plot(range(start_time, len(mae_of_tr_R_2) +start_time), mae_of_tr_R_2, label="Day 3; Optimal R Network")
+# %%
+verbose_isolate = 1
+NN_start_sc_t = 1
+R_of_sct_mae, mae_of_sct_mae = IsolateBinaryTime(optimal_NNs_mae,dataset, 'Spin Coating', NN_start_sc_t, param_batches, verbose_isolate, str_MAE)
+R_of_sct_R, mae_of_sct_R = IsolateBinaryTime(optimal_NNs_R, dataset, 'Spin Coating', NN_start_sc_t, param_batches, verbose_isolate, str_R)
 
-#plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-#plt.xlabel('Time (s)')
-#plt.ylabel('Mean Absolute Error')
-#plt.show()
 
-#plt.plot(range(start_time, len(R_of_tr_mae_0) +start_time), R_of_tr_mae_0, label="Day 1; Optimal MAE Network")
-#plt.plot(range(start_time, len(R_of_tr_mae_1) +start_time), R_of_tr_mae_1, label="Day 2; Optimal MAE Network")
-#plt.plot(range(start_time, len(R_of_tr_mae_2) +start_time), R_of_tr_mae_2, label="Day 3; Optimal MAE Network")
+# %%
+R_of_mins_sct_mae_1 = []
+R_of_mins_sct_mae_0 = []
+mae_of_averages_sct_mae_1 = []
+mae_of_averages_sct_mae_0 = []
+R_of_mins_sct_R_1 = []
+R_of_mins_sct_R_0 = []
+mae_of_averages_sct_R_1 = []
+mae_of_averages_sct_R_0 = []
 
-#plt.plot(range(start_time, len(R_of_tr_R_0) +start_time), R_of_tr_R_0, label="Day 1; Optimal R Network")
-#plt.plot(range(start_time, len(R_of_tr_R_1) +start_time), R_of_tr_R_1, label="Day 2; Optimal R Network")
-#plt.plot(range(start_time, len(R_of_tr_R_2) +start_time), R_of_tr_R_2, label="Day 3; Optimal R Network")
+for i in range(len(R_of_sct_mae)):
+    R_of_mins_sct_mae_1.append(R_of_sct_mae[i][1])
+    R_of_mins_sct_mae_0.append(R_of_sct_mae[i][0])
 
-#plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-#plt.xlabel('Time (s)')
-#plt.ylabel('R')
-#plt.show()
+    mae_of_averages_sct_mae_1.append(mae_of_sct_mae[i][1])
+    mae_of_averages_sct_mae_0.append(mae_of_sct_mae[i][0])
+
+    R_of_mins_sct_R_1.append(R_of_sct_R[i][1])
+    R_of_mins_sct_R_0.append(R_of_sct_R[i][0])
+
+
+    mae_of_averages_sct_R_1.append(mae_of_sct_R[i][1])
+    mae_of_averages_sct_R_0.append(mae_of_sct_R[i][0])
+
+
+# %% [markdown]
+# #### Isolating Increasing PPM and Time
+
+# %%
+verbose_isolate = 1
+start_t_increasing = 1
+
+R_of_increasing_mae, mae_of_increasing_mae = IsolateBinaryTime(optimal_NNs_mae, dataset, 'Increasing PPM', start_t_increasing, param_batches, verbose_isolate, str_MAE)
+R_of_increasing_R, mae_of_increasing_R = IsolateBinaryTime(optimal_NNs_R, dataset, 'Increasing PPM', start_t_increasing, param_batches, verbose_isolate, str_R)
+
+
+# %%
+R_of_increasing_mae_1 = []
+R_of_increasing_mae_0 = []
+mae_of_increasing_mae_1 = []
+mae_of_increasing_mae_0 = []
+R_of_increasing_R_1 = []
+R_of_increasing_R_0 = []
+mae_of_increasing_R_1 = []
+mae_of_increasing_R_0 = []
+
+for i in range(len(R_of_increasing_mae)):
+    R_of_increasing_mae_1.append(R_of_increasing_mae[i][1])
+    R_of_increasing_mae_0.append(R_of_increasing_mae[i][0])
+
+    mae_of_increasing_mae_1.append(mae_of_increasing_mae[i][1])
+    mae_of_increasing_mae_0.append(mae_of_increasing_mae[i][0])
+
+    R_of_increasing_R_1.append(R_of_increasing_R[i][1])
+    R_of_increasing_R_0.append(R_of_increasing_R[i][0])
+
+    mae_of_increasing_R_1.append(mae_of_increasing_R[i][1])
+    mae_of_increasing_R_0.append(mae_of_increasing_R[i][0])
+
+
+
+# %%
+
+R_of_tr_mae_0 = []
+R_of_tr_mae_1 = []
+R_of_tr_mae_2 = []
+
+mae_of_tr_mae_0 = []
+mae_of_tr_mae_1 = []
+mae_of_tr_mae_2 = []
+
+R_of_tr_R_0 = []
+R_of_tr_R_1 = []
+R_of_tr_R_2 = []
+
+mae_of_tr_R_0 = []
+mae_of_tr_R_1 = []
+mae_of_tr_R_2 = []
+
+
+for i in range(len(R_of_tr_mae)):
+    R_of_tr_mae_0.append(R_of_tr_mae[i][0])
+    R_of_tr_mae_1.append(R_of_tr_mae[i][1])
+    R_of_tr_mae_2.append(R_of_tr_mae[i][2])
+
+    mae_of_tr_mae_0.append(mae_of_tr_mae[i][0])
+    mae_of_tr_mae_1.append(mae_of_tr_mae[i][1])
+    mae_of_tr_mae_2.append(mae_of_tr_mae[i][2])
+
+    R_of_tr_R_0.append(R_of_tr_R[i][0])
+    R_of_tr_R_1.append(R_of_tr_R[i][1])
+    R_of_tr_R_2.append(R_of_tr_R[i][2])
+
+    mae_of_tr_R_0.append(mae_of_tr_R[i][0])
+    mae_of_tr_R_1.append(mae_of_tr_R[i][1])
+    mae_of_tr_R_2.append(mae_of_tr_R[i][2])
 
 
 
@@ -819,45 +736,38 @@ mae_of_tr_R_2 = [mae_of_tr_R[i][2] for i in range(len(mae_of_tr_R))]
 
 # %%
 import os
-filepath = r".\\"
+filepath = r".\\Sum {} - Epochs {} - Folds {}\\".format(sum_nodes, num_epochs, k_folds)
 local_download_path = os.path.expanduser(filepath)
 
 # %%
 dict_sc = pd.DataFrame({
-    "Optimal MAE NN: R"    : R_of_sc_mae,
-    "Optimal R NN: R"      : R_of_sc_R,
-    "Optimal MAE NN: MAE"  : mae_of_sc_mae,
-    "Optimal R NN: MAE"  : mae_of_sc_R
+    "SC Optimal MAE NN: R"    : R_of_sc_mae,
+    "SC Optimal R NN: R"      : R_of_sc_R,
+    "SC Optimal MAE NN: MAE"  : mae_of_sc_mae,
+    "SC Optimal R NN: MAE"  : mae_of_sc_R,
+
+
+    "Time Optimal MAE NN: R"    : R_time_mae, 
+    "Time Optimal R NN: R"      : R_time_R,
+    "Time Optimal MAE NN: MAE"  : mae_averages_time_mae, 
+    "Time Optimal R NN: MAE"    : mae_averages_time_R,
+
+
+
+    "Time SC: 0;  Optimal MAE NN: R"    : [R_of_sct_mae[i][0] for i in range(len(R_of_sct_mae))], 
+    "Time SC: 0;  Optimal R NN: R"      : [R_of_sct_R[i][0] for i in range(len(R_of_sct_R))],
+
+    "Time SC: 1;  Optimal MAE NN: R"    : [R_of_sct_mae[i][1] for i in range(len(R_of_sct_mae))],     
+    "TIme SC: 1;  Optimal R NN: R"      : [R_of_sct_R[i][1] for i in range(len(R_of_sct_R))],
+
+    "Time SC: 0;  Optimal MAE NN: MAE"  : [mae_of_sct_mae[i][0] for i in range(len(mae_of_sct_mae))], 
+    "Time SC: 0;  Optimal R NN: MAE"    : [mae_of_sct_R[i][0] for i in range(len(mae_of_sct_R))],
+
+    "Time SC: 1;  Optimal MAE NN: MAE"  : [mae_of_sct_mae[i][1] for i in range(len(mae_of_sct_mae))], 
+    "Time SC: 1; Optimal R NN: MAE"    : [mae_of_sct_R[i][1] for i in range(len(mae_of_sct_R))]
     })
 
-dict_sc.to_csv('spin_coating - {} - {} - {}.csv'.format(sum_nodes, num_epochs, 1), index=False)
-
-# %%
-dict_time = pd.DataFrame({
-    "Optimal MAE NN: R"    : R_time_mae, 
-    "Optimal R NN: R"      : R_time_R,
-    "Optimal MAE NN: MAE"  : mae_averages_time_mae, 
-    "Optimal R NN: MAE"    : mae_averages_time_R
-    })
-dict_sc.to_csv('time - {} - {} - {}.csv'.format(sum_nodes, num_epochs, 1), index=False)
-
-
-# %%
-dict_sc_time = pd.DataFrame({
-    "SC: 0;  Optimal MAE NN: R"    : [R_of_sct_mae[i][0] for i in range(len(R_of_sct_mae))], 
-    "SC: 0;  Optimal R NN: R"      : [R_of_sct_R[i][0] for i in range(len(R_of_sct_R))],
-
-    "SC: 1;  Optimal MAE NN: R"    : [R_of_sct_mae[i][1] for i in range(len(R_of_sct_mae))],     
-    "SC: 1;  Optimal R NN: R"      : [R_of_sct_R[i][1] for i in range(len(R_of_sct_R))],
-
-    "SC: 0;  Optimal MAE NN: MAE"  : [mae_of_sct_mae[i][0] for i in range(len(mae_of_sct_mae))], 
-    "SC: 0;  Optimal R NN: MAE"    : [mae_of_sct_R[i][0] for i in range(len(mae_of_sct_R))],
-
-    "SC: 1;  Optimal MAE NN: MAE"  : [mae_of_sct_mae[i][1] for i in range(len(mae_of_sct_mae))], 
-    "SC: 1; Optimal R NN: MAE"    : [mae_of_sct_R[i][1] for i in range(len(mae_of_sct_R))]
-    })
-
-dict_sc.to_csv('sc_time - {} - {} - {}.csv'.format(sum_nodes, num_epochs, 1), index=False)
+dict_sc.to_csv('SC_and_time.csv'.format(sum_nodes, num_epochs, k_folds), index=False)
 
 
 # %%
@@ -880,7 +790,7 @@ dict_repeat_time = pd.DataFrame({
 
     })
 
-dict_sc.to_csv('repeat_time - {} - {} - {}.csv'.format(sum_nodes, num_epochs, 1), index=False)
+dict_sc.to_csv('repeat_time - Sum {} - Epochs {} - Folds {}.csv'.format(sum_nodes, num_epochs, k_folds), index=False)
 
 
 
