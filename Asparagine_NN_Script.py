@@ -152,9 +152,9 @@ k_folds = 3
 num_val_samples = len(train_labels) // k_folds
 
 n1_start = n2_start = 8 #8
-sum_nodes = 16 #48
+sum_nodes = 18 #48
 
-num_epochs = 250 #500
+num_epochs = 500 #500
 batch_size = 20 #50
 verbose = 0
 
@@ -234,7 +234,7 @@ for i in range(n1_start, sum_nodes):
 
         mae_history.append([ np.mean([x[i] for x in k_mae_history]) for i in range(num_epochs)])
 
-        order_of_architecture.append([i, j])
+        order_of_architecture.append([j, i])
 
 
         mae_history.append([ np.mean([x[i] for x in k_mae_history]) for i in range(num_epochs)])
