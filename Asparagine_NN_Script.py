@@ -151,8 +151,8 @@ all_features, data_labels, train_dataset, test_dataset, train_features, test_fea
 k_folds = 4
 num_val_samples = len(train_labels) // k_folds
 
-n1_start = n2_start = 8 #8
-sum_nodes = 20 #48
+n1_start = n2_start = 5 #8
+sum_nodes = 48 #48
 
 num_epochs = 500 #500
 batch_size = 20 #50
