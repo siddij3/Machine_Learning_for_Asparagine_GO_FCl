@@ -24,12 +24,11 @@ import keras.utils
 import tensorflow as tf
 from matplotlib import pyplot as plt
 import numpy as np
+import os
 
-from mpl_toolkits import mplot3d
-from cgi import test
+
 
 dataset = pd.read_csv('aggregated_data.csv')
-
 
 dataset = shuffle(dataset)
 std_scaler = StandardScaler()
@@ -110,7 +109,7 @@ def KCrossValidation(i, features, labels, num_val_samples, epochs, batch, verbos
 
     history = model.fit(
         partial_train_data, partial_train_targets,
-        epochs=epochs, batch_size=batch, validation_split=0.2, verbose=verbose #, callbacks=early_stop
+        epochs=epochs, batch_size=batch, validation_split=0.2, verbose=verbose #, =early_stop
     )
 
     history = pd.DataFrame(history.history)
@@ -149,15 +148,19 @@ def Pearson(model, features, y_true, batch, verbose_):
 
 # %%
 all_features, data_labels, train_dataset, test_dataset, train_features, test_features, train_labels, test_labels,  = importData(dataset.copy(), std_scaler)
-k_folds = 4 
+k_folds = 3
 num_val_samples = len(train_labels) // k_folds
 
 n1_start = n2_start = 8 #8
 sum_nodes = 16 #48
 
-num_epochs = 100 #500
+num_epochs = 250 #500
 batch_size = 20 #50
 verbose = 0
+
+filepath = r".\\Sum {} - Epochs {} - Folds {}\\".format(sum_nodes, num_epochs, k_folds)
+local_download_path = os.path.expanduser(filepath)
+os.makedirs(filepath)
 
 print("\n")
 print("Number Folds: ", k_folds)
@@ -184,7 +187,7 @@ R_all = []
 # #### Where the Magic Happens
 
 # %%
-#(TAKEN FROM DEEP LEARNING WITH PYTHON BY MANNING)
+#(STEPS FROM DEEP LEARNING WITH PYTHON BY MANNING)
 for i in range(n1_start, sum_nodes):
 
     for j in range(n2_start, sum_nodes):
@@ -241,11 +244,7 @@ dict_lowest_MAE = pd.DataFrame(dict_lowest_MAE, index = [0])
 dict_highest_R = pd.DataFrame(dict_highest_R, index = [0])
 
 df_R_MAE = dict_highest_R.append(dict_lowest_MAE, ignore_index=True)
-df_R_MAE.to_csv('R, MAE - Sum {} - Epochs {} - Folds {}.csv'.format(sum_nodes, num_epochs, k_folds), index=False)
-
-
-# %% [markdown]
-# #### Getting Pearson Coefficients
+#df_R_MAE.to_csv(filepath + 'R, MAE.csv', index=False)
 
 # %%
 # Find the model with the lowest error
@@ -262,10 +261,6 @@ for i in range(k_folds):
 # %% [markdown]
 # Plotting Loss Transition
 
-# %%
-from operator import index
-
-
 def smooth_curve(points, factor=0.8):
     smoothed_points = []
     for point in points:
@@ -277,8 +272,6 @@ def smooth_curve(points, factor=0.8):
     return smoothed_points
 
 print(order_of_architecture[lowest_mae_index], order_of_architecture[highest_R_index])
-
-plt.plot(range(1, len(mae_history[lowest_mae_index]) + 1), mae_history[lowest_mae_index], label="Lowest MAE")
 
 
 smooth_mae_history = smooth_curve(mae_history[lowest_mae_index])
@@ -295,14 +288,14 @@ dict_epochs = pd.DataFrame({
     "Highest R Smoothed": smooth_R_history,
     })
 
-dict_epochs.to_csv('epochs - {} - {} - {}.csv'.format(sum_nodes, num_epochs, 1), index=False)
+dict_epochs  = dict_epochs.append(df_R_MAE, ignore_index=True)
+dict_epochs.to_csv(filepath + 'epochs - Sum {} - Epochs {} - Folds {}.csv'.format(sum_nodes, num_epochs, k_folds), index=False)
 
 del mae_history, all_networks, all_history
 
 # %% [markdown]
 # Scaling Data Set Function
 
-# %%
 def scaleDataset(data):
     data = std_scaler.fit_transform(data.to_numpy())
     dict = {
@@ -320,7 +313,6 @@ def scaleDataset(data):
 # %% [markdown]
 # ## Functions for Isolating Parameters
 
-# %%
 def isolateParam(optimal_NNs, data, parameter, start_index, end_index, NN_start, batch, verbose, mae_or_R):
     # Split the data labels with time
     param_index= []
@@ -356,19 +348,26 @@ def isolateParam(optimal_NNs, data, parameter, start_index, end_index, NN_start,
             tmp, tmp_predictions = Pearson(NN, param_features[i], param_labels[i], batch, verbose) 
             tmp_R.append(tmp)
 
-            dict_title = "NN {} Correlation for {}: {} {}".format(j, parameter, i, mae_or_R)
-            print(tmp_predictions)
-            _predictions[dict_title] = tmp_predictions
+            dict_title_real = "Real NN {} Correlation for {} - {}: {}".format(j, parameter, i, mae_or_R)
+            dict_title = "Predicted NN {} Correlation for {} - {}: {}".format(j, parameter, i, mae_or_R)
+
+            _predictions[dict_title_real] = param_labels[i].tolist()
+            _predictions[dict_title] = tmp_predictions.tolist()
+
             
             tmp_mae.append(test_mae)
-            
+            j += 1
             
         R.append(tmp_R)
         mae.append(tmp_mae)
+    
 
+    _predictions = pd.DataFrame({ key:pd.Series(value) for key, value in _predictions.items() })
+    _predictions.to_csv(filepath + 'Optimal {} Isolated {} - Sum {} - Epochs {} - Folds {}.csv'.format(mae_or_R, parameter, sum_nodes, num_epochs, k_folds), index=False)
+    
     average_R = []
     average_mae = []
-    for i in range(len(mae)):
+    for i in range(end_index):
         average_R.append(sum(R[i])/len(R[i]))
         average_mae.append(sum(mae[i])/len(mae[i]))
 
@@ -430,6 +429,7 @@ def IsolateBinaryTime(optimal_NNs, data, parameter, start_time, batch, vbs, mae_
             tmp_mae = []
             tmp_R = []
 
+            k = 0
             for NN in optimal_NNs:
                 test_loss, test_mae, test_mse = NN.evaluate(
                     shared_features[i][j], 
@@ -440,12 +440,15 @@ def IsolateBinaryTime(optimal_NNs, data, parameter, start_time, batch, vbs, mae_
 
                 tmp, tmp_predictions = Pearson(NN, shared_features[i][j], shared_labels[i][j], batch, verbose) 
                 tmp_R.append(tmp)
-                print(tmp_predictions)
 
                 tmp_mae.append(test_mae)
 
-                dict_title = "NN {} Correlation for {}: {} {}".format(j, parameter, i, mae_or_R)
-                _predictions[dict_title] = tmp_predictions[0]
+                dict_title_real = "Real NN {} Correlation for T {}, {} {}: {}".format(k, i, parameter, j, mae_or_R)
+                dict_title = "Predicted NN {} Correlation for T {}, {} {}: {}".format(k, i, parameter, j, mae_or_R)
+
+                _predictions[dict_title_real] = shared_labels[i][j].tolist()
+                _predictions[dict_title] = tmp_predictions.tolist()
+
 
 
             sc_tmp_mae.append(tmp_mae)
@@ -454,6 +457,10 @@ def IsolateBinaryTime(optimal_NNs, data, parameter, start_time, batch, vbs, mae_
         shared_mae.append(sc_tmp_mae)
         shared_R.append(sc_tmp_R)
 
+
+    _predictions = pd.DataFrame({ key:pd.Series(value) for key, value in _predictions.items() })
+    _predictions.to_csv(filepath + 'Optimal {} Isolated Time and {} - Sum {} - Epochs {} - Folds {}.csv'.format(mae_or_R, parameter, sum_nodes, num_epochs, k_folds), index=False)
+    
 
     averages_R = []
     averages_mae = []
@@ -530,7 +537,7 @@ def repeatSensor(optimal_NNs, data, parameter1, parameter2, start_index, end_ind
 
             tmp_mae = []
             tmp_R = []
-
+            k = 0
             for NN in optimal_NNs:
                 test_loss, test_mae, test_mse = NN.evaluate(tr_features[i][j], tr_labels[i][j], batch_size=batch,  verbose=vbs)
                 
@@ -541,9 +548,12 @@ def repeatSensor(optimal_NNs, data, parameter1, parameter2, start_index, end_ind
                 tmp_mae.append(test_mae)
 
 
-                dict_title = "NN {} Correlation for {}, {}: {} {}".format(j, parameter1, parameter2, i, mae_or_R)
-                _predictions[dict_title] = tmp_predictions[0]
-
+                dict_title_real = "Real NN {} Correlation for T {}, Repeat {}: {} ".format(k, i, j,  mae_or_R)
+                dict_title = "Predicted NN {} Correlation for T {}, Repeat {}: {} ".format(k, i, j,  mae_or_R)
+                
+                _predictions[dict_title_real] = tmp_predictions.tolist()
+                _predictions[dict_title] = tr_labels[i][j].tolist()
+                k+=1
 
             tr_tmp_mae.append(tmp_mae)
             tr_tmp_R.append(tmp_R)
@@ -554,6 +564,9 @@ def repeatSensor(optimal_NNs, data, parameter1, parameter2, start_index, end_ind
 
     averages_mae = []
     averages_R = []
+
+    _predictions = pd.DataFrame({ key:pd.Series(value) for key, value in _predictions.items() })
+    _predictions.to_csv(filepath + 'Optimal {} - Isolated {} and {} - Sum {} - Epochs {} - Folds {}.csv'.format(mae_or_R, parameter1, parameter2, sum_nodes, num_epochs, k_folds), index=False)
 
     for i in tr_mae:
         averages_mae.append([sum(i[0])/len(i[0]), sum(i[1])/len(i[1]), sum(i[2])/len(i[2])])
@@ -639,7 +652,6 @@ R_of_mins_sct_R_0 = []
 mae_of_averages_sct_R_1 = []
 mae_of_averages_sct_R_0 = []
 
-print(len(R_of_sct_mae))
 
 for i in range(len(R_of_sct_mae)):
     R_of_mins_sct_mae_1.append(R_of_sct_mae[i][1])
@@ -665,7 +677,6 @@ R_of_increasing_R_0 = []
 mae_of_increasing_R_1 = []
 mae_of_increasing_R_0 = []
 
-print(len(R_of_increasing_mae))
 for i in range(len(R_of_increasing_mae)):
     R_of_increasing_mae_1.append(R_of_increasing_mae[i][1])
     R_of_increasing_mae_0.append(R_of_increasing_mae[i][0])
@@ -678,8 +689,6 @@ for i in range(len(R_of_increasing_mae)):
 
     mae_of_increasing_R_1.append(mae_of_increasing_R[i][1])
     mae_of_increasing_R_0.append(mae_of_increasing_R[i][0])
-
-
 
 # %%
 
@@ -700,7 +709,6 @@ mae_of_tr_R_1 = []
 mae_of_tr_R_2 = []
 
 
-print(len(R_of_tr_mae))
 for i in range(len(R_of_tr_mae)):
     R_of_tr_mae_0.append(R_of_tr_mae[i][0])
     R_of_tr_mae_1.append(R_of_tr_mae[i][1])
@@ -721,19 +729,11 @@ for i in range(len(R_of_tr_mae)):
 # %% [markdown]
 # # Printing to CSV
 
-# %%
-import os
-filepath = r".\\Sum {} - Epochs {} - Folds {}\\".format(sum_nodes, num_epochs, k_folds)
-local_download_path = os.path.expanduser(filepath)
-
-# %%
-
-dict_sc = pd.DataFrame({
+dict_all = {
     "SC Optimal MAE NN: R"    : R_of_sc_mae,
     "SC Optimal R NN: R"      : R_of_sc_R,
     "SC Optimal MAE NN: MAE"  : mae_of_sc_mae,
     "SC Optimal R NN: MAE"  : mae_of_sc_R,
-
 
     "Time Optimal MAE NN: R"    : R_time_mae, 
     "Time Optimal R NN: R"      : R_time_R,
@@ -751,14 +751,9 @@ dict_sc = pd.DataFrame({
     "Time SC: 0;  Optimal R NN: MAE"    : mae_of_averages_sct_R_0,
 
     "Time SC: 1;  Optimal MAE NN: MAE"  : mae_of_averages_sct_mae_1, 
-    "Time SC: 1; Optimal R NN: MAE"    : mae_of_averages_sct_R_1
-    })
-
-dict_sc.to_csv('SC_and_time.csv'.format(sum_nodes, num_epochs, k_folds), index=False)
+    "Time SC: 1; Optimal R NN: MAE"    : mae_of_averages_sct_R_1,
 
 
-# %%
-dict_repeat_time = pd.DataFrame({
     "Day 1;  Optimal R NN: R"    : R_of_tr_R_0, 
     "Day 2;  Optimal R NN: R"    : R_of_tr_R_1, 
     "Day 3;  Optimal R NN: R"    : R_of_tr_R_2, 
@@ -775,9 +770,11 @@ dict_repeat_time = pd.DataFrame({
     "Day 2;  Optimal MAE NN: MAE"    : mae_of_tr_mae_1, 
     "Day 3;  Optimal MAE NN: MAE"    : mae_of_tr_mae_2, 
 
-    })
+    }
 
-dict_sc.to_csv('repeat_time - Sum {} - Epochs {} - Folds {}.csv'.format(sum_nodes, num_epochs, k_folds), index=False)
+dict_all = pd.DataFrame({ key:pd.Series(value) for key, value in dict_all.items() })
+dict_all.to_csv(filepath + 'Final MAE and R  - Sum {} - Epochs {} - Folds {}.csv'.format(sum_nodes, num_epochs, k_folds), index=False)
+
 
 
 
