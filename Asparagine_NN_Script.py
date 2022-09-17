@@ -148,11 +148,11 @@ def Pearson(model, features, y_true, batch, verbose_):
 
 # %%
 all_features, data_labels, train_dataset, test_dataset, train_features, test_features, train_labels, test_labels,  = importData(dataset.copy(), std_scaler)
-k_folds = 3
+k_folds = 4
 num_val_samples = len(train_labels) // k_folds
 
 n1_start = n2_start = 8 #8
-sum_nodes = 18 #48
+sum_nodes = 20 #48
 
 num_epochs = 500 #500
 batch_size = 20 #50
@@ -261,7 +261,7 @@ for i in range(k_folds):
 # %% [markdown]
 # Plotting Loss Transition
 
-def smooth_curve(points, factor=0.8):
+def smooth_curve(points, factor=0.7):
     smoothed_points = []
     for point in points:
         if smoothed_points:
@@ -313,7 +313,7 @@ def scaleDataset(data):
 # %% [markdown]
 # ## Functions for Isolating Parameters
 
-def isolateParam(optimal_NNs, data, parameter, start_index, end_index, NN_start, batch, verbose, mae_or_R):
+def isolateParam(optimal_NNs, data, parameter, start_index, end_index, NN_start, batch, verbose, mae_or_R): #Somethign wrong in here TODO
     # Split the data labels with time
     param_index= []
     for i in range(start_index, end_index):
@@ -330,7 +330,8 @@ def isolateParam(optimal_NNs, data, parameter, start_index, end_index, NN_start,
         param_labels.append(data_labels.to_numpy()[param_index[i]])
 
 
-    mae = R = []
+    mae = []
+    R = []
     _predictions = {}
     for i in range(NN_start, end_index):
         tmp_mae = []
@@ -354,10 +355,10 @@ def isolateParam(optimal_NNs, data, parameter, start_index, end_index, NN_start,
             _predictions[dict_title_real] = param_labels[i].tolist()
             _predictions[dict_title] = tmp_predictions.tolist()
 
-            
+    
             tmp_mae.append(test_mae)
             j += 1
-            
+
         R.append(tmp_R)
         mae.append(tmp_mae)
     
@@ -367,9 +368,13 @@ def isolateParam(optimal_NNs, data, parameter, start_index, end_index, NN_start,
     
     average_R = []
     average_mae = []
-    for i in range(end_index):
-        average_R.append(sum(R[i])/len(R[i]))
-        average_mae.append(sum(mae[i])/len(mae[i]))
+    
+    for i in R:
+        average_R.append(sum(i)/len(i))
+    
+    for i in mae:
+        average_mae.append(sum(i)/len(i))
+
 
     return average_R, average_mae
 
@@ -448,7 +453,7 @@ def IsolateBinaryTime(optimal_NNs, data, parameter, start_time, batch, vbs, mae_
 
                 _predictions[dict_title_real] = shared_labels[i][j].tolist()
                 _predictions[dict_title] = tmp_predictions.tolist()
-
+                k+=1
 
 
             sc_tmp_mae.append(tmp_mae)
@@ -574,7 +579,6 @@ def repeatSensor(optimal_NNs, data, parameter1, parameter2, start_index, end_ind
     for i in tr_R:
         averages_R.append([sum(i[0])/len(i[0]), sum(i[1])/len(i[1]), sum(i[2])/len(i[2])])
 
-    
     return averages_R, averages_mae
 
 # %%
@@ -735,7 +739,7 @@ dict_all = {
     "SC Optimal MAE NN: MAE"  : mae_of_sc_mae,
     "SC Optimal R NN: MAE"  : mae_of_sc_R,
 
-    "Time Optimal MAE NN: R"    : R_time_mae, 
+    "Time Optimal MAE NN: R"    : R_time_mae, #Something wrong with this one
     "Time Optimal R NN: R"      : R_time_R,
     "Time Optimal MAE NN: MAE"  : mae_averages_time_mae, 
     "Time Optimal R NN: MAE"    : mae_averages_time_R,
@@ -751,7 +755,7 @@ dict_all = {
     "Time SC: 0;  Optimal R NN: MAE"    : mae_of_averages_sct_R_0,
 
     "Time SC: 1;  Optimal MAE NN: MAE"  : mae_of_averages_sct_mae_1, 
-    "Time SC: 1; Optimal R NN: MAE"    : mae_of_averages_sct_R_1,
+    "Time SC: 1; Optimal R NN: MAE"    : mae_of_averages_sct_R_1, 
 
 
     "Day 1;  Optimal R NN: R"    : R_of_tr_R_0, 
