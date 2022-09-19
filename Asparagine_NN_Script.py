@@ -7,28 +7,23 @@
 from pandas import read_csv
 from keras.models import Sequential
 from keras.layers import Dense
-from keras.wrappers.scikit_learn import KerasRegressor
-from sklearn.model_selection import cross_val_score
-from sklearn.model_selection import KFold
+from keras.callbacks import EarlyStopping
 from sklearn.preprocessing import StandardScaler
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.pipeline import Pipeline
 from tensorflow.keras import layers
 from sklearn.utils import shuffle
 import math
-
+from tensorflow.keras.optimizers import RMSprop
 import pandas as pd
-import seaborn as sns
-import keras
+from pandas import DataFrame
+
 import keras.utils
 import tensorflow as tf
-from matplotlib import pyplot as plt
 import numpy as np
 import os
 
 
 
-dataset = pd.read_csv('aggregated_data.csv')
+dataset = read_csv('aggregated_data.csv')
 
 dataset = shuffle(dataset)
 std_scaler = StandardScaler()
@@ -55,7 +50,7 @@ def importData(data, scaler):
         'Repeat Sensor Use':train_features[:, 5], 
         'Days Elapsed':train_features[:, 6]
         }
-    train_features = pd.DataFrame(dict)
+    train_features = DataFrame(dict)
 
     test_features = scaler.fit_transform(test_features.to_numpy())
     dict = {
@@ -67,7 +62,7 @@ def importData(data, scaler):
         'Repeat Sensor Use':test_features[:, 5], 
         'Days Elapsed':test_features[:, 6]
         }
-    test_features = pd.DataFrame(dict)
+    test_features = DataFrame(dict)
 
     #For later use
     data_labels = data.pop('Concentration')
@@ -84,15 +79,15 @@ def importData(data, scaler):
 # %%
 def build_model(n1, n2):
   #Experiment with different models, thicknesses, layers, activation functions; Don't limit to only 10 nodes; Measure up to 64 nodes in 2 layers
-  model = keras.Sequential([
-    layers.Dense(n1, activation=tf.nn.relu, input_shape=[7]),
-    layers.Dense(n2, activation=tf.nn.relu),
-    layers.Dense(1)
+  model = Sequential([
+    Dense(n1, activation=tf.nn.relu, input_shape=[7]),
+    Dense(n2, activation=tf.nn.relu),
+    Dense(1)
   ])
 
-  optimizer = tf.keras.optimizers.RMSprop(0.001)
+  optimizer = RMSprop(0.001)
   model.compile(loss='mse', optimizer=optimizer, metrics=['mae','mse'])
-  early_stop = keras.callbacks.EarlyStopping(monitor='val_loss',patience=5)
+  early_stop = EarlyStopping(monitor='val_loss',patience=5)
 
   return model, early_stop
 
@@ -112,7 +107,7 @@ def KCrossValidation(i, features, labels, num_val_samples, epochs, batch, verbos
         epochs=epochs, batch_size=batch, validation_split=0.2, verbose=verbose #, =early_stop
     )
 
-    history = pd.DataFrame(history.history)
+    history = DataFrame(history.history)
 
 
     test_loss, test_mae, test_mse = model.evaluate(val_data, val_targets, verbose=verbose)
@@ -129,15 +124,15 @@ def Pearson(model, features, y_true, batch, verbose_):
         use_multiprocessing=False,
     )
 
-    tmp_numerator = 0
-    tmp_denominator_real = 0
-    tmp_denominator_pred = 0
+    tmp_numerator, tmp_denominator_real,  tmp_denominator_pred = 0, 0,0
 
-    for i in range(len(y_pred)):
+    i = 0
+    while i < y_pred:
         tmp_numerator += (y_true[i] - sum(y_true)/len(y_true))* (y_pred[i] - sum(y_pred)/len(y_pred))
 
         tmp_denominator_real += (y_true[i] - sum(y_true)/len(y_true))**2
         tmp_denominator_pred += (y_pred[i] - sum(y_pred)/len(y_pred))**2
+        i += 1
 
     R = tmp_numerator / (math.sqrt(tmp_denominator_pred) * math.sqrt(tmp_denominator_real))
 
@@ -147,14 +142,14 @@ def Pearson(model, features, y_true, batch, verbose_):
 # ## NEURAL NETWORK PARAMETERS
 
 # %%
-all_features, data_labels, train_dataset, test_dataset, train_features, test_features, train_labels, test_labels,  = importData(dataset.copy(), std_scaler)
+all_features, data_labels, train_dataset, test_dataset, train_features, test_features, train_labels, test_labels, = importData(dataset.copy(), std_scaler)
 k_folds = 4
 num_val_samples = len(train_labels) // k_folds
 
-n1_start = n2_start = 5 #8
-sum_nodes = 48 #48
+n1_start, n2_start = 5,5 #8
+sum_nodes = 11 #48
 
-num_epochs = 500 #500
+num_epochs = 400 #500
 batch_size = 20 #50
 verbose = 0
 
@@ -171,36 +166,31 @@ print("Epochs: ", num_epochs)
 print("Batch Size: ", batch_size)
 print("\n")
 
-avg_val_scores = []
-order_of_architecture = []
+avg_val_scores,  order_of_architecture = [], []
 
-dict_lowest_MAE  = {} 
-dict_highest_R = {}
+dict_lowest_MAE,dict_highest_R  = {}, {}
 
-all_networks  = []
-all_history  = []
-mae_history = []
+all_networks, all_history, mae_history, R_all  = [], [], [], []
 
-R_all = []
 
 # %% [markdown]
 # #### Where the Magic Happens
 
 # %%
 #(STEPS FROM DEEP LEARNING WITH PYTHON BY MANNING)
-for i in range(n1_start, sum_nodes):
 
-    for j in range(n2_start, sum_nodes):
+i = n1_start
+while i < sum_nodes:
+    
+    j = n1_start
+    while j < sum_nodes:
         if (i+j > sum_nodes):
             continue
         
         print("first hidden layer", j)
         print("second hidden layer", i)
-        k_fold_test_scores = []
-        k_models = []
-        k_history = []
-        k_mae_history = []
-        R_tmp = []
+        k_fold_test_scores, k_models, k_history, k_mae_history, R_tmp = [], [], [], [], []
+
 
         for fold in range(k_folds):
             model, history, test_loss, test_mae, test_mse, test_R = KCrossValidation(
@@ -217,7 +207,7 @@ for i in range(n1_start, sum_nodes):
             R_tmp.append(test_R)
             k_fold_test_scores.append(test_mae)
             
-            k_history.append(history)
+            #k_history.append(history)
             k_models.append(model)
             k_mae_history.append(history['val_mae'])
 
@@ -229,23 +219,22 @@ for i in range(n1_start, sum_nodes):
         dict_lowest_MAE['MAE: {}, {}'.format(j, i)] = avg_val_scores[-1]
 
 
-        all_history.append(k_history)
+        #all_history.append(k_history)
         all_networks.append(k_models)
 
         mae_history.append([ np.mean([x[i] for x in k_mae_history]) for i in range(num_epochs)])
 
         order_of_architecture.append([j, i])
-
-
         mae_history.append([ np.mean([x[i] for x in k_mae_history]) for i in range(num_epochs)])
 
+        j +=1
 
-dict_lowest_MAE = pd.DataFrame(dict_lowest_MAE, index = [0])
-dict_highest_R = pd.DataFrame(dict_highest_R, index = [0])
+    i +=1
+
+dict_lowest_MAE = DataFrame(dict_lowest_MAE, index = [0])
+dict_highest_R = DataFrame(dict_highest_R, index = [0])
 
 df_R_MAE = dict_highest_R.append(dict_lowest_MAE, ignore_index=True)
-#df_R_MAE.to_csv(filepath + 'R, MAE.csv', index=False)
-
 # %%
 # Find the model with the lowest error
 lowest_mae_index = avg_val_scores.index(min(avg_val_scores))
@@ -254,9 +243,6 @@ optimal_NNs_mae = all_networks[lowest_mae_index]
 highest_R_index = R_all.index(max(R_all))
 optimal_NNs_R = all_networks[highest_R_index]
 
-# Find the history of that model, and display it
-for i in range(k_folds):
-    x = all_history[lowest_mae_index][i]['val_mae']
 
 # %% [markdown]
 # Plotting Loss Transition
@@ -273,12 +259,11 @@ def smooth_curve(points, factor=0.7):
 
 print(order_of_architecture[lowest_mae_index], order_of_architecture[highest_R_index])
 
-
 smooth_mae_history = smooth_curve(mae_history[lowest_mae_index])
 smooth_R_history = smooth_curve(mae_history[highest_R_index])
 
 
-dict_epochs = pd.DataFrame({ 
+dict_epochs = DataFrame({ 
     "Epochs" : range(1, len(mae_history[lowest_mae_index]) + 1),
     "Lowest MAE": mae_history[lowest_mae_index],
     "Highest R": mae_history[highest_R_index],
@@ -307,7 +292,7 @@ def scaleDataset(data):
         'Repeat Sensor Use':data[:, 5], 
         'Days Elapsed':data[:, 6]
         }
-    return pd.DataFrame(dict)
+    return DataFrame(dict)
 
 
 # %% [markdown]
@@ -315,27 +300,19 @@ def scaleDataset(data):
 
 def isolateParam(optimal_NNs, data, parameter, start_index, end_index, NN_start, batch, verbose, mae_or_R): #Somethign wrong in here TODO
     # Split the data labels with time
-    param_index= []
-    for i in range(start_index, end_index):
-        param_index.append(np.where(data[parameter].to_numpy()  == i)[0])
+    param_index= [np.where(data[parameter].to_numpy()  == i)[0] for i in range(start_index, end_index)]
 
     scaled_features = scaleDataset(all_features.copy())
     #The full features of the data points that use certain time values
-    param_features =  []
-    param_labels = []
+    param_features =  [scaled_features.iloc[param_index[i]] for i in range(start_index, end_index)]
+    param_labels = [data_labels.to_numpy()[param_index[i]] for i in range(start_index, end_index)]
 
-    for i in range(start_index, end_index):
-        param_features.append(scaled_features.iloc[param_index[i]])
-        #The stupid labels for each second
-        param_labels.append(data_labels.to_numpy()[param_index[i]])
-
-
-    mae = []
-    R = []
+    mae, R = [], []
     _predictions = {}
-    for i in range(NN_start, end_index):
-        tmp_mae = []
-        tmp_R = []
+
+    i = NN_start
+    while i < end_index:
+        tmp_mae, tmp_R = [], []
         
         j = 0
         for NN in optimal_NNs:
@@ -361,20 +338,15 @@ def isolateParam(optimal_NNs, data, parameter, start_index, end_index, NN_start,
 
         R.append(tmp_R)
         mae.append(tmp_mae)
+
+        i+= 1
     
 
-    _predictions = pd.DataFrame({ key:pd.Series(value) for key, value in _predictions.items() })
+    _predictions = DataFrame({ key:pd.Series(value) for key, value in _predictions.items() })
     _predictions.to_csv(filepath + 'Optimal {} Isolated {} - Sum {} - Epochs {} - Folds {}.csv'.format(mae_or_R, parameter, sum_nodes, num_epochs, k_folds), index=False)
     
-    average_R = []
-    average_mae = []
-    
-    for i in R:
-        average_R.append(sum(i)/len(i))
-    
-    for i in mae:
-        average_mae.append(sum(i)/len(i))
-
+    average_R = [sum(i)/len(i) for i in R]
+    average_mae = [sum(i)/len(i) for i in mae]
 
     return average_R, average_mae
 
@@ -386,32 +358,26 @@ def IsolateBinaryTime(optimal_NNs, data, parameter, start_time, batch, vbs, mae_
     ss_1 = np.where(data[parameter].to_numpy()  ==  1)[0]
     ss_0 = np.where(data[parameter].to_numpy()  ==  0)[0]
 
-    times_index = []
-    shared_time_1 = []
-    shared_time_0 = []
+    times_index, shared_time_1, shared_time_0 = [], [], []
 
-    for i in range(0, 51):
+    i = 0
+    while i < 51:
         times_index.append(np.where(data['Time'].to_numpy()  == i)[0].tolist())
 
-        time_1_tmp = []
-        time_0_tmp = []
-        
-        for index_sc in ss_1:
-            if index_sc in times_index[i]:
-                time_1_tmp.append(index_sc)
-        for index_sc in ss_0:
-            if index_sc in times_index[i]:
-                time_0_tmp.append(index_sc)
-                
+        time_1_tmp = [index_sc for index_sc in ss_1 if index_sc in times_index[i]]
+        time_0_tmp = [index_sc for index_sc in ss_0 if index_sc in times_index[i]]
+
+                        
         shared_time_1.append(time_1_tmp)
         shared_time_0.append(time_0_tmp)
+        i +=1
 
     scaled_features = scaleDataset(all_features.copy())
 
-    shared_features = []
-    shared_labels = []
+    shared_features, shared_labels = [], []
 
-    for i in range(0, 51):
+    i = 0
+    while i < 51:
         shared_features.append([
             scaled_features.iloc[shared_time_0[i]], 
             scaled_features.iloc[shared_time_1[i]]
@@ -421,18 +387,19 @@ def IsolateBinaryTime(optimal_NNs, data, parameter, start_time, batch, vbs, mae_
             data_labels.to_numpy()[shared_time_0[i]], 
             data_labels.to_numpy()[shared_time_1[i]]
             ])
-    
 
-    shared_mae = []
-    shared_R = []
+        i+=1
+
+    shared_mae, shared_R = [], []
     _predictions = {}
-    for i in range(start_time, 51):
-        sc_tmp_mae = []
-        sc_tmp_R = []
 
-        for j in range(0, 2):
-            tmp_mae = []
-            tmp_R = []
+    i = start_time
+    while i < 51:
+        sc_tmp_mae, sc_tmp_R = [], []
+
+        j = 0
+        while j < 2:
+            tmp_mae, tmp_R = [], []
 
             k = 0
             for NN in optimal_NNs:
@@ -455,20 +422,22 @@ def IsolateBinaryTime(optimal_NNs, data, parameter, start_time, batch, vbs, mae_
                 _predictions[dict_title] = tmp_predictions.tolist()
                 k+=1
 
-
             sc_tmp_mae.append(tmp_mae)
             sc_tmp_R.append(tmp_R)
+
+            j+=1
 
         shared_mae.append(sc_tmp_mae)
         shared_R.append(sc_tmp_R)
 
+        
 
-    _predictions = pd.DataFrame({ key:pd.Series(value) for key, value in _predictions.items() })
+
+    _predictions =DataFrame({ key:pd.Series(value) for key, value in _predictions.items() })
     _predictions.to_csv(filepath + 'Optimal {} Isolated Time and {} - Sum {} - Epochs {} - Folds {}.csv'.format(mae_or_R, parameter, sum_nodes, num_epochs, k_folds), index=False)
     
 
-    averages_R = []
-    averages_mae = []
+    averages_R, averages_mae = [], []
     for i in shared_mae:
         averages_mae.append([sum(i[0])/len(i[0]), sum(i[1])/len(i[1])])
 
@@ -481,21 +450,15 @@ def IsolateBinaryTime(optimal_NNs, data, parameter, start_time, batch, vbs, mae_
 def repeatSensor(optimal_NNs, data, parameter1, parameter2, start_index, end_index, start_time, batch, vbs, mae_or_R):
 
     # Split the data labels with RSU
-    repeat_index= []
-    for i in range(start_index, end_index):
-        repeat_index.append(np.where(data[parameter1].to_numpy()  == i+1)[0])
+    repeat_index= [np.where(data[parameter1].to_numpy()  == i+1)[0] for i in range(start_index, end_index)]
 
-    shared_tr_1 = []
-    shared_tr_2 = []
-    shared_tr_3 = []
+    shared_tr_1, shared_tr_2, shared_tr_3 = [], [], []
 
     times_index = []
     for i in range(0, 51):
         times_index.append(np.where(data[parameter2].to_numpy()  == i)[0].tolist())
 
-        tr_1_tmp = []
-        tr_2_tmp = []
-        tr_3_tmp = []
+        tr_1_tmp, tr_2_tmp, tr_3_tmp = [], [], []
 
         for j in range(len(repeat_index)):
     
@@ -536,13 +499,12 @@ def repeatSensor(optimal_NNs, data, parameter1, parameter2, start_index, end_ind
     tr_R = []
     _predictions = {}
     for i in range(start_time, 51):
-        tr_tmp_mae = []
-        tr_tmp_R = []
+        tr_tmp_mae, tr_tmp_R = [], []
         for j in range(start_index, end_index):
 
-            tmp_mae = []
-            tmp_R = []
+            tmp_mae, tmp_R = [], []
             k = 0
+            
             for NN in optimal_NNs:
                 test_loss, test_mae, test_mse = NN.evaluate(tr_features[i][j], tr_labels[i][j], batch_size=batch,  verbose=vbs)
                 
@@ -570,7 +532,7 @@ def repeatSensor(optimal_NNs, data, parameter1, parameter2, start_index, end_ind
     averages_mae = []
     averages_R = []
 
-    _predictions = pd.DataFrame({ key:pd.Series(value) for key, value in _predictions.items() })
+    _predictions = DataFrame({ key:pd.Series(value) for key, value in _predictions.items() })
     _predictions.to_csv(filepath + 'Optimal {} - Isolated {} and {} - Sum {} - Epochs {} - Folds {}.csv'.format(mae_or_R, parameter1, parameter2, sum_nodes, num_epochs, k_folds), index=False)
 
     for i in tr_mae:
@@ -646,92 +608,10 @@ R_of_tr_R, mae_of_tr_R = repeatSensor(
     "R"
     )
 
-# %%
-R_of_mins_sct_mae_1 = []
-R_of_mins_sct_mae_0 = []
-mae_of_averages_sct_mae_1 = []
-mae_of_averages_sct_mae_0 = []
-R_of_mins_sct_R_1 = []
-R_of_mins_sct_R_0 = []
-mae_of_averages_sct_R_1 = []
-mae_of_averages_sct_R_0 = []
-
-
-for i in range(len(R_of_sct_mae)):
-    R_of_mins_sct_mae_1.append(R_of_sct_mae[i][1])
-    R_of_mins_sct_mae_0.append(R_of_sct_mae[i][0])
-
-    mae_of_averages_sct_mae_1.append(mae_of_sct_mae[i][1])
-    mae_of_averages_sct_mae_0.append(mae_of_sct_mae[i][0])
-
-    R_of_mins_sct_R_1.append(R_of_sct_R[i][1])
-    R_of_mins_sct_R_0.append(R_of_sct_R[i][0])
-
-    mae_of_averages_sct_R_1.append(mae_of_sct_R[i][1])
-    mae_of_averages_sct_R_0.append(mae_of_sct_R[i][0])
-
-
-# %%
-R_of_increasing_mae_1 = []
-R_of_increasing_mae_0 = []
-mae_of_increasing_mae_1 = []
-mae_of_increasing_mae_0 = []
-R_of_increasing_R_1 = []
-R_of_increasing_R_0 = []
-mae_of_increasing_R_1 = []
-mae_of_increasing_R_0 = []
-
-for i in range(len(R_of_increasing_mae)):
-    R_of_increasing_mae_1.append(R_of_increasing_mae[i][1])
-    R_of_increasing_mae_0.append(R_of_increasing_mae[i][0])
-
-    mae_of_increasing_mae_1.append(mae_of_increasing_mae[i][1])
-    mae_of_increasing_mae_0.append(mae_of_increasing_mae[i][0])
-
-    R_of_increasing_R_1.append(R_of_increasing_R[i][1])
-    R_of_increasing_R_0.append(R_of_increasing_R[i][0])
-
-    mae_of_increasing_R_1.append(mae_of_increasing_R[i][1])
-    mae_of_increasing_R_0.append(mae_of_increasing_R[i][0])
-
-# %%
-
-R_of_tr_mae_0 = []
-R_of_tr_mae_1 = []
-R_of_tr_mae_2 = []
-
-mae_of_tr_mae_0 = []
-mae_of_tr_mae_1 = []
-mae_of_tr_mae_2 = []
-
-R_of_tr_R_0 = []
-R_of_tr_R_1 = []
-R_of_tr_R_2 = []
-
-mae_of_tr_R_0 = []
-mae_of_tr_R_1 = []
-mae_of_tr_R_2 = []
-
-
-for i in range(len(R_of_tr_mae)):
-    R_of_tr_mae_0.append(R_of_tr_mae[i][0])
-    R_of_tr_mae_1.append(R_of_tr_mae[i][1])
-    R_of_tr_mae_2.append(R_of_tr_mae[i][2])
-
-    mae_of_tr_mae_0.append(mae_of_tr_mae[i][0])
-    mae_of_tr_mae_1.append(mae_of_tr_mae[i][1])
-    mae_of_tr_mae_2.append(mae_of_tr_mae[i][2])
-
-    R_of_tr_R_0.append(R_of_tr_R[i][0])
-    R_of_tr_R_1.append(R_of_tr_R[i][1])
-    R_of_tr_R_2.append(R_of_tr_R[i][2])
-
-    mae_of_tr_R_0.append(mae_of_tr_R[i][0])
-    mae_of_tr_R_1.append(mae_of_tr_R[i][1])
-    mae_of_tr_R_2.append(mae_of_tr_R[i][2])
 
 # %% [markdown]
 # # Printing to CSV
+
 
 dict_all = {
     "SC Optimal MAE NN: R"    : R_of_sc_mae,
@@ -739,46 +619,55 @@ dict_all = {
     "SC Optimal MAE NN: MAE"  : mae_of_sc_mae,
     "SC Optimal R NN: MAE"  : mae_of_sc_R,
 
-    "Time Optimal MAE NN: R"    : R_time_mae, #Something wrong with this one
+    "Time Optimal MAE NN: R"    : R_time_mae, 
     "Time Optimal R NN: R"      : R_time_R,
     "Time Optimal MAE NN: MAE"  : mae_averages_time_mae, 
     "Time Optimal R NN: MAE"    : mae_averages_time_R,
 
 
-    "Time SC: 0;  Optimal MAE NN: R"    : R_of_mins_sct_mae_0, 
-    "Time SC: 0;  Optimal R NN: R"      : R_of_mins_sct_R_0,
 
-    "Time SC: 1;  Optimal MAE NN: R"    : R_of_mins_sct_mae_1,     
-    "TIme SC: 1;  Optimal R NN: R"      : R_of_mins_sct_R_1,
+    "Time SC: 0;  Optimal MAE NN: R"    : [i[0] for i in R_of_sct_mae], 
+    "Time SC: 0;  Optimal R NN: R"      : [i[0] for i in R_of_sct_R],
 
-    "Time SC: 0;  Optimal MAE NN: MAE"  : mae_of_averages_sct_mae_0, 
-    "Time SC: 0;  Optimal R NN: MAE"    : mae_of_averages_sct_R_0,
+    "Time SC: 1;  Optimal MAE NN: R"    : [i[1] for i in R_of_sct_mae],     
+    "TIme SC: 1;  Optimal R NN: R"      : [i[1] for i in R_of_sct_R],
 
-    "Time SC: 1;  Optimal MAE NN: MAE"  : mae_of_averages_sct_mae_1, 
-    "Time SC: 1; Optimal R NN: MAE"    : mae_of_averages_sct_R_1, 
+    "Time SC: 0;  Optimal MAE NN: MAE"  : [i[0] for i in mae_of_sct_mae], 
+    "Time SC: 0;  Optimal R NN: MAE"    : [i[0] for i in mae_of_sct_R],
 
+    "Time SC: 1;  Optimal MAE NN: MAE"  : [i[1] for i in mae_of_sct_mae], 
+    "Time SC: 1; Optimal R NN: MAE"    : [i[1] for i in mae_of_sct_R], 
 
-    "Day 1;  Optimal R NN: R"    : R_of_tr_R_0, 
-    "Day 2;  Optimal R NN: R"    : R_of_tr_R_1, 
-    "Day 3;  Optimal R NN: R"    : R_of_tr_R_2, 
+    
+    "Time Increasing: 0;  Optimal MAE NN: R"    : [i[0] for i in R_of_increasing_mae], 
+    "Time Increasing: 0;  Optimal R NN: R"      : [i[0] for i in R_of_increasing_R],
 
-    "Day 1;  Optimal MAE NN: R"    : R_of_tr_mae_0, 
-    "Day 2;  Optimal MAE NN: R"    : R_of_tr_mae_1, 
-    "Day 3;  Optimal MAE NN: R"    : R_of_tr_mae_2, 
+    "Time Increasing: 1;  Optimal MAE NN: R"    : [i[1] for i in R_of_increasing_mae],     
+    "TIme Increasing: 1;  Optimal R NN: R"      : [i[1] for i in R_of_increasing_R],
 
-    "Day 1;  Optimal R NN: MAE"    : mae_of_tr_R_0, 
-    "Day 2;  Optimal R NN: MAE"    : mae_of_tr_R_1, 
-    "Day 3;  Optimal R NN: MAE"    : mae_of_tr_R_2, 
+    "Time Increasing: 0;  Optimal MAE NN: MAE"  : [i[0] for i in mae_of_increasing_mae] , 
+    "Time Increasing: 0;  Optimal R NN: MAE"    : [i[0] for i in mae_of_increasing_R],
 
-    "Day 1;  Optimal MAE NN: MAE"    : mae_of_tr_mae_0, 
-    "Day 2;  Optimal MAE NN: MAE"    : mae_of_tr_mae_1, 
-    "Day 3;  Optimal MAE NN: MAE"    : mae_of_tr_mae_2, 
+    "Time Increasing: 1;  Optimal MAE NN: MAE"  : [i[1] for i in mae_of_increasing_mae], 
+    "Time Increasing: 1; Optimal R NN: MAE"    : [i[1] for i in mae_of_increasing_R], 
+
+    "Day 1;  Optimal R NN: R"    : [i[0] for i in R_of_tr_R], 
+    "Day 2;  Optimal R NN: R"    : [i[1] for i in R_of_tr_R], 
+    "Day 3;  Optimal R NN: R"    : [i[2] for i in R_of_tr_R], 
+
+    "Day 1;  Optimal MAE NN: R"    : [i[0] for i in R_of_tr_mae], 
+    "Day 2;  Optimal MAE NN: R"    : [i[1] for i in R_of_tr_mae], 
+    "Day 3;  Optimal MAE NN: R"    : [i[2] for i in R_of_tr_mae], 
+
+    "Day 1;  Optimal R NN: MAE"    : [i[0] for i in mae_of_tr_R], 
+    "Day 2;  Optimal R NN: MAE"    : [i[1] for i in mae_of_tr_R], 
+    "Day 3;  Optimal R NN: MAE"    : [i[2] for i in mae_of_tr_R], 
+
+    "Day 1;  Optimal MAE NN: MAE"    : [i[0] for i in mae_of_tr_mae], 
+    "Day 2;  Optimal MAE NN: MAE"    : [i[1] for i in mae_of_tr_mae], 
+    "Day 3;  Optimal MAE NN: MAE"    : [i[2] for i in mae_of_tr_mae], 
 
     }
 
-dict_all = pd.DataFrame({ key:pd.Series(value) for key, value in dict_all.items() })
+dict_all = DataFrame({ key:pd.Series(value) for key, value in dict_all.items() })
 dict_all.to_csv(filepath + 'Final MAE and R  - Sum {} - Epochs {} - Folds {}.csv'.format(sum_nodes, num_epochs, k_folds), index=False)
-
-
-
-
