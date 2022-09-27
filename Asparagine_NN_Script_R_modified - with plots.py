@@ -162,7 +162,7 @@ n1_start = n2_start = 8 #8
 sum_nodes = 19 #48
 
 num_epochs = 500 #300
-batch_size = 50 #100
+batch_size = 32 #100
 verbose = 0
 
 print("\n")
@@ -279,7 +279,7 @@ dict_lowest_MAE = pd.DataFrame(dict_lowest_MAE, index = [0])
 dict_highest_R = pd.DataFrame(dict_highest_R, index = [0])
 
 df_R_MAE = dict_highest_R.append(dict_lowest_MAE, ignore_index=True)
-df_R_MAE.to_csv('R, MAE - Sum {} - Epochs {} - Folds {}.csv'.format(sum_nodes, num_epochs, k_folds), index=False)
+df_R_MAE.to_csv('R, MAE - Sum {} - Epochs {} - Folds {} - Batch {}.csv'.format(sum_nodes, num_epochs, k_folds, batch_size), index=False)
 
 
 # %% [markdown]
