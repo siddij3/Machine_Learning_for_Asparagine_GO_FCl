@@ -145,11 +145,11 @@ k_folds = 4
 num_val_samples = len(train_labels) // k_folds
 
 
-n1_start, n2_start = 5,5
+n1_start, n2_start = 16,16 #8
 sum_nodes = 32 #32
 
-num_epochs = 400 #500
-batch_size = 32 #50
+num_epochs = 50 #500
+batch_size = 10000 #50
 verbose = 0
 
 #filepath = '.\\epochs {} - Sum {} - Epochs {} - Batch {} - Data {}\\'.format(num_epochs, sum_nodes, batch_size, "both")
@@ -229,7 +229,7 @@ print("Models done")
 optimal_NNs_mae = best_mae_networks
 i = 0
 for model in optimal_NNs_mae:
-    model.save("Model {} number {}".format(best_architecture, i))
+   # model.save("Model {} number {}".format(best_architecture, i))
     i +=1
 
 
@@ -304,9 +304,9 @@ def isolateParam(optimal_NNs, data, parameter, start_index, end_index, NN_start,
     _predictions = {}
 
     for i in range(NN_start, end_index):
-        tmp_mae, tmp_R = [None]*k_folds, [None]*k_folds
+        tmp_mae, tmp_R = [], []
 
-        avg_predictions = [None]*k_folds
+        avg_predictions = []
         
         j = 0
         for NN in optimal_NNs:
@@ -318,7 +318,7 @@ def isolateParam(optimal_NNs, data, parameter, start_index, end_index, NN_start,
                 )
 
             tmp, tmp_predictions = Pearson(NN, param_features[i], param_labels[i], batch, verbose) 
-            tmp_R[j] = tmp
+            tmp_R.append(tmp)
 
             dict_title_real = "Real NN {} Correlation for {} - {}: {}".format(j, parameter, i, mae_or_R)
             dict_title = "Predicted NN {} Correlation for {} - {}: {}".format(j, parameter, i, mae_or_R)
@@ -326,9 +326,9 @@ def isolateParam(optimal_NNs, data, parameter, start_index, end_index, NN_start,
             _predictions[dict_title_real] = param_labels[i].tolist()
             _predictions[dict_title] = tmp_predictions.tolist()
 
-            avg_predictions[j] = tmp_predictions.tolist()
+            avg_predictions.append(tmp_predictions.tolist())
     
-            tmp_mae[j] = test_mae
+            tmp_mae.append(test_mae)
             j += 1
 
         dict_average = "Averages for {}:".format(i)
@@ -391,8 +391,8 @@ def IsolateBinaryTime(optimal_NNs, data, parameter, start_time, batch, vbs, mae_
 
 
         for j in range(0, 2):
-            tmp_mae, tmp_R = [None]*k_folds, [None]*k_folds
-            avg_predictions = [None]*k_folds
+            tmp_mae, tmp_R = [], []
+            avg_predictions = []
 
             k = 0
             for NN in optimal_NNs:
@@ -405,8 +405,9 @@ def IsolateBinaryTime(optimal_NNs, data, parameter, start_time, batch, vbs, mae_
                     )
 
                 tmp, tmp_predictions = Pearson(NN, shared_features[j][i], shared_labels[j][i], batch, verbose) 
-                tmp_R[k] = tmp
-                tmp_mae[k] = test_mae
+                tmp_R.append(tmp)
+
+                tmp_mae.append(test_mae)
 
                 dict_title_real = "Real NN {} Correlation for T {}, {} {}: {}".format(k, i, parameter, j, mae_or_R)
                 dict_title = "Predicted NN {} Correlation for T {}, {} {}: {}".format(k, i, parameter, j, mae_or_R)
@@ -414,15 +415,15 @@ def IsolateBinaryTime(optimal_NNs, data, parameter, start_time, batch, vbs, mae_
                 _predictions[dict_title_real] = shared_labels[j][i].tolist()
                 _predictions[dict_title] = tmp_predictions.tolist()
 
-                avg_predictions[k] = tmp_predictions.tolist()
+                avg_predictions.append(tmp_predictions.tolist())
                 k+=1
-
-            dict_average = "Averages for T {} - {} {}:".format(i, parameter, j)
-            arr_avg_predictions = np.transpose(avg_predictions)
-            _predictions[dict_average] = [np.mean(z) for z in arr_avg_predictions]
 
             sc_tmp_mae.append(tmp_mae)
             sc_tmp_R.append(tmp_R)
+
+            dict_average = "Averages for T {} - {} {}:".format(i, parameter, j)
+            arr_avg_predictions = np.transpose(avg_predictions)
+            _predictions[dict_average] = [np.mean(i) for i in arr_avg_predictions]
 
 
         shared_mae.append(sc_tmp_mae)
@@ -501,19 +502,19 @@ def repeatSensor(optimal_NNs, data, parameter1, parameter2, start_index, end_ind
 
 
         for j in range(start_index, end_index):
-            tmp_mae, tmp_R = [None]*k_folds, [None]*k_folds
+            tmp_mae, tmp_R = [], []
             k = 0
 
-            avg_predictions = [None]*k_folds
+            avg_predictions = []
 
             for NN in optimal_NNs:
                 test_loss, test_mae, test_mse = NN.evaluate(tr_features[i][j], tr_labels[i][j], batch_size=batch,  verbose=vbs)
                 
 
                 tmp, tmp_predictions = Pearson(NN, tr_features[i][j], tr_labels[i][j], batch, verbose) 
+                tmp_R.append(tmp)
 
-                tmp_R[k] = tmp
-                tmp_mae[k] = test_mae
+                tmp_mae.append(test_mae)
 
 
                 dict_title_real = "Real NN {} Correlation for T {}, Repeat {}: {} ".format(k, i, j,  mae_or_R)
@@ -522,12 +523,13 @@ def repeatSensor(optimal_NNs, data, parameter1, parameter2, start_index, end_ind
                 _predictions[dict_title_real] = tr_labels[i][j].tolist()
                 _predictions[dict_title] = tmp_predictions.tolist()
 
-                avg_predictions[k] = tmp_predictions.tolist()
+                avg_predictions.append(tmp_predictions.tolist())
+
                 k+=1
 
             dict_average = "Averages for T {} - Repeat {}:".format(i, j)
             arr_avg_predictions = np.transpose(avg_predictions)
-            _predictions[dict_average] = [np.mean(z) for z in arr_avg_predictions]
+            _predictions[dict_average] = [np.mean(i) for i in arr_avg_predictions]
 
             tr_tmp_mae.append(tmp_mae)
             tr_tmp_R.append(tmp_R)
@@ -559,12 +561,6 @@ param_batches = 10
 
 str_MAE = "MAE"
 
-# %% [markdown]
-# #### Isolating Increasing PPM and Time
-print("Isolating Increasing PPM and Time")
-R_of_increasing_mae, mae_of_increasing_mae = IsolateBinaryTime(optimal_NNs_mae, dataset, 'Increasing PPM', start_time, param_batches, vbs, str_MAE)
-R_of_increasing_testdata, mae_of_increasing_testdata = IsolateBinaryTime(optimal_NNs_mae, test_dataset, 'Increasing PPM', start_time, param_batches, vbs, "TEST DATA")
-
 
 # %% [markdown]
 # #### Isolating Spin Coating
@@ -578,12 +574,6 @@ print("Isolating Time")
 
 R_time_mae, mae_averages_time_mae = isolateParam(optimal_NNs_mae, dataset, 'Time', 0, 51, start_time, param_batches, vbs, str_MAE)
 R_time_testdata, mae_averages_time_testdata = isolateParam(optimal_NNs_mae, test_dataset, 'Time', 0, 51, start_time, param_batches, vbs, "TEST DATA")
-
-# %% [markdown]
-# #### Isolating Spin Coating and Time
-print("Isolating Spin Coating and Time")
-R_of_sct_mae, mae_of_sct_mae = IsolateBinaryTime(optimal_NNs_mae, dataset, 'Spin Coating', start_time, param_batches, vbs, str_MAE)
-R_of_sct_testdata, mae_of_sct_testdata = IsolateBinaryTime(optimal_NNs_mae, test_dataset, 'Spin Coating', start_time, param_batches, vbs, "TEST DATA")
 
 # %% [markdown]
 # #### Repeat Sensor Use
@@ -601,6 +591,22 @@ R_of_tr_mae, mae_of_tr_mae = repeatSensor(
     vbs, 
     str_MAE
     )
+
+# %% [markdown]
+# #### Isolating Increasing PPM and Time
+print("Isolating Increasing PPM and Time")
+R_of_increasing_mae, mae_of_increasing_mae = IsolateBinaryTime(optimal_NNs_mae, dataset, 'Increasing PPM', start_time, param_batches, vbs, str_MAE)
+R_of_increasing_testdata, mae_of_increasing_testdata = IsolateBinaryTime(optimal_NNs_mae, test_dataset, 'Increasing PPM', start_time, param_batches, vbs, "TEST DATA")
+
+
+
+# %% [markdown]
+# #### Isolating Spin Coating and Time
+print("Isolating Spin Coating and Time")
+R_of_sct_mae, mae_of_sct_mae = IsolateBinaryTime(optimal_NNs_mae, dataset, 'Spin Coating', start_time, param_batches, vbs, str_MAE)
+R_of_sct_testdata, mae_of_sct_testdata = IsolateBinaryTime(optimal_NNs_mae, test_dataset, 'Spin Coating', start_time, param_batches, vbs, "TEST DATA")
+
+
 
 
 # %% [markdown]
