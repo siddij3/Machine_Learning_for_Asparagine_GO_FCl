@@ -20,7 +20,7 @@ import tensorflow as tf
 import numpy as np
 import os
 
-dataset = read_csv('aggregated_data.csv')
+dataset = read_csv('aggregated_data_short.csv')
 dataset = shuffle(dataset)
 
 std_scaler = StandardScaler()
@@ -28,7 +28,7 @@ std_scaler = StandardScaler()
 # %%
 def importData(data, scaler):
 
-    train_dataset = data.sample(frac=0.8, random_state=1234)
+    train_dataset = data.sample(frac=0.8, random_state=9578)
     test_dataset = data.drop(train_dataset.index)
 
     train_features = train_dataset.copy()
@@ -145,9 +145,9 @@ k_folds = 4
 num_val_samples = len(train_labels) // k_folds
 
 n1_start, n2_start = 5,5 #8
-sum_nodes = 32 #32
+sum_nodes = 32 #48
 
-num_epochs = 400 #500
+num_epochs = 500 #500
 batch_size = 32 #50
 verbose = 0
 
@@ -161,12 +161,12 @@ print("Epochs: ", num_epochs)
 print("Batch Size: ", batch_size)
 print("\n")
 
-best_architecture = [0,0]
+best_architecture_R_mae = [0,0]
 
 dict_lowest_MAE,dict_highest_R  = {}, {}
-best_mae_networks, best_mae_history = 0,0,
+best_mae_networks, best_R_networks, best_R_history, best_mae_history = 0,0,0,0
 
-mae_best  = 10
+R_best, mae_best  = 0, 10
 
 # %% [markdown]
 # #### Where the Magic Happens
@@ -207,6 +207,13 @@ for i in range(n1_start, sum_nodes):
         R_recent = sum(R_tmp)/len(R_tmp)
         dict_highest_R['R: {}, {}'.format(j, i)] = R_recent
 
+        if (R_recent >= R_best):
+            R_best = R_recent
+            best_R_networks = k_models
+            best_architecture_R_mae[0] = [j,i]
+            best_R_history = [ np.mean([x[z] for x in k_mae_history]) for z in range(num_epochs)]
+
+
 
         mae_recent = sum(k_fold_mae)/len(k_fold_mae)
 
@@ -215,16 +222,18 @@ for i in range(n1_start, sum_nodes):
         if (mae_recent <= mae_best):
             mae_best = mae_recent
             best_mae_networks = k_models
-            best_architecture = [j,i]
+            best_architecture_R_mae[1] = [j,i]
             best_mae_history = [ np.mean([x[z] for x in k_mae_history]) for z in range(num_epochs)]
         
-        print(mae_best, mae_recent, best_architecture)
+        print(R_best, R_recent, best_architecture_R_mae[0])
+        print(mae_best, mae_recent, best_architecture_R_mae[1])
 
 
 print("Models done")
 # %%
 # Find the model with the lowest error
 optimal_NNs_mae = best_mae_networks
+optimal_NNs_R = best_R_networks
 
 # %% [markdown]
 # Plotting Loss Transition
@@ -239,20 +248,22 @@ def smooth_curve(points, factor=0.7):
             smoothed_points.append(point)
     return smoothed_points
 
-print(best_architecture)
+print(best_architecture_R_mae[0], best_architecture_R_mae[1])
 
 smooth_mae_history = smooth_curve(best_mae_history)
+smooth_R_history = smooth_curve(best_R_history)
 
 #   _predictions =DataFrame({ key:pd.Series(value) for key, value in _predictions.items() })
 dict_epochs = { 
     "Epochs" : range(1, len(best_mae_history) + 1),
     "Lowest MAE": best_mae_history,
+    "Highest R": best_R_history,
 
     "Smoothed Epochs": range(1, len(smooth_mae_history) + 1),
 
     "Lowest MAE Smoothed": smooth_mae_history,
-    "Smoothed Epochs": range(1, len(smooth_mae_history) + 1)
-
+    "Smoothed Epochs": range(1, len(smooth_R_history) + 1),
+    "Highest R Smoothed": smooth_R_history,
     }
 
 dict_lowest_MAE = DataFrame(dict_lowest_MAE, index = [0])
@@ -333,6 +344,7 @@ def isolateParam(optimal_NNs, data, parameter, start_index, end_index, NN_start,
 
     return average_R, average_mae
 
+
 # %%
 def IsolateBinaryTime(optimal_NNs, data, parameter, start_time, batch, vbs, mae_or_R):
     # Splitting Spin Coating, then seperating by time
@@ -365,6 +377,7 @@ def IsolateBinaryTime(optimal_NNs, data, parameter, start_time, batch, vbs, mae_
     shared_labels1 = [data_labels.to_numpy()[shared_time_1[i]] for i in range(0,51)]
     shared_labels = [shared_labels0, shared_labels1]
 
+ 
 
     shared_mae, shared_R = [], []
     _predictions = {}
@@ -495,8 +508,8 @@ def repeatSensor(optimal_NNs, data, parameter1, parameter2, start_index, end_ind
                 dict_title_real = "Real NN {} Correlation for T {}, Repeat {}: {} ".format(k, i, j,  mae_or_R)
                 dict_title = "Predicted NN {} Correlation for T {}, Repeat {}: {} ".format(k, i, j,  mae_or_R)
                 
-                _predictions[dict_title_real] = tr_labels[i][j].tolist()
-                _predictions[dict_title] = tmp_predictions.tolist()
+                _predictions[dict_title_real] = tmp_predictions.tolist()
+                _predictions[dict_title] = tr_labels[i][j].tolist()
                 k+=1
 
             tr_tmp_mae.append(tmp_mae)
@@ -521,12 +534,14 @@ def repeatSensor(optimal_NNs, data, parameter1, parameter2, start_index, end_ind
     return averages_R, averages_mae
 
 # %%
+
 start_index= 0
 end_index = 3
 vbs = 1
 start_time = 1
 param_batches = 10
 
+str_R = "R"
 str_MAE = "MAE"
 
 # %% [markdown]
@@ -543,12 +558,12 @@ R_of_tr_mae, mae_of_tr_mae = repeatSensor(
     start_time, 
     param_batches, 
     vbs, 
-    str_MAE
+    "MAE"
     )
 
-R_of_tr_testdata, mae_of_tr_testdata = repeatSensor(
-    optimal_NNs_mae, 
-    test_dataset, 
+R_of_tr_R, mae_of_tr_R = repeatSensor(
+    optimal_NNs_R, 
+    dataset, 
     'Repeat Sensor Use', 
     'Time',
     start_index, 
@@ -556,34 +571,34 @@ R_of_tr_testdata, mae_of_tr_testdata = repeatSensor(
     start_time, 
     param_batches, 
     vbs, 
-    "TEST DATA"
+    "R"
     )
 
 # %% [markdown]
 # #### Isolating Increasing PPM and Time
 print("Isolating Increasing PPM and Time")
 R_of_increasing_mae, mae_of_increasing_mae = IsolateBinaryTime(optimal_NNs_mae, dataset, 'Increasing PPM', start_time, param_batches, vbs, str_MAE)
-R_of_increasing_testdata, mae_of_increasing_testdata = IsolateBinaryTime(optimal_NNs_mae, test_dataset, 'Increasing PPM', start_time, param_batches, vbs, "TEST DATA")
+R_of_increasing_R, mae_of_increasing_R = IsolateBinaryTime(optimal_NNs_R, dataset, 'Increasing PPM', start_time, param_batches, vbs, str_R)
 
 
 # %% [markdown]
 # #### Isolating Spin Coating
 print("Isolating Spin Coating")
 R_of_sc_mae, mae_of_sc_mae = isolateParam(optimal_NNs_mae, dataset, 'Spin Coating', 0, 2, 0, param_batches, vbs, str_MAE)
-R_of_sc_testdata, mae_of_sc_testdata = isolateParam(optimal_NNs_mae, test_dataset, 'Spin Coating', 0, 2, 0, param_batches, vbs, "TEST DATA")
+R_of_sc_R, mae_of_sc_R = isolateParam(optimal_NNs_R, dataset, 'Spin Coating', 0, 2, 0, param_batches, vbs, str_R)
 
 # %% [markdown]
 # #### Isolating Time
 print("Isolating Time")
 
 R_time_mae, mae_averages_time_mae = isolateParam(optimal_NNs_mae, dataset, 'Time', 0, 51, start_time, param_batches, vbs, str_MAE)
-R_time_testdata, mae_averages_time_testdata = isolateParam(optimal_NNs_mae, test_dataset, 'Time', 0, 51, start_time, param_batches, vbs, "TEST DATA")
+R_time_R, mae_averages_time_R = isolateParam(optimal_NNs_R, dataset, 'Time', 0, 51, start_time, param_batches, vbs, str_R)
 
 # %% [markdown]
 # #### Isolating Spin Coating and Time
 print("Isolating Spin Coating and Time")
-R_of_sct_mae, mae_of_sct_mae = IsolateBinaryTime(optimal_NNs_mae, dataset, 'Spin Coating', start_time, param_batches, vbs, str_MAE)
-R_of_sct_testdata, mae_of_sct_testdata = IsolateBinaryTime(optimal_NNs_mae, test_dataset, 'Spin Coating', start_time, param_batches, vbs, "TEST DATA")
+R_of_sct_mae, mae_of_sct_mae = IsolateBinaryTime(optimal_NNs_mae,dataset, 'Spin Coating', start_time, param_batches, vbs, str_MAE)
+R_of_sct_R, mae_of_sct_R = IsolateBinaryTime(optimal_NNs_R, dataset, 'Spin Coating', start_time, param_batches, vbs, str_R)
 
 
 
@@ -593,55 +608,60 @@ R_of_sct_testdata, mae_of_sct_testdata = IsolateBinaryTime(optimal_NNs_mae, test
 
 
 dict_all = {
-    "SC: R"    : R_of_sc_mae,
-    "SC: MAE"  : mae_of_sc_mae,
-    "SC Test: R"    : R_of_sc_testdata,
-    "SC Test: MAE"  : mae_of_sc_testdata,
+    "SC Optimal MAE NN: R"    : R_of_sc_mae,
+    "SC Optimal R NN: R"      : R_of_sc_R,
+    "SC Optimal MAE NN: MAE"  : mae_of_sc_mae,
+    "SC Optimal R NN: MAE"  : mae_of_sc_R,
 
-    "Time: Test R"    : R_time_mae, 
-    "Time: Test MAE"  : mae_averages_time_mae, 
-    "Time: Test R"    : R_time_testdata, 
-    "Time: Test MAE"  : mae_averages_time_testdata, 
+    "Time Optimal MAE NN: R"    : R_time_mae, 
+    "Time Optimal R NN: R"      : R_time_R,
+    "Time Optimal MAE NN: MAE"  : mae_averages_time_mae, 
+    "Time Optimal R NN: MAE"    : mae_averages_time_R,
 
-    "Time SC: 0;: R"    : [i[0] for i in R_of_sct_mae], 
-    "Time SC: 1: R"    : [i[1] for i in R_of_sct_mae],     
-    "Time SC: 0 : MAE"  : [i[0] for i in mae_of_sct_mae], 
-    "Time SC: 1 : MAE"  : [i[1] for i in mae_of_sct_mae], 
 
-    "Time SC: 0; Test R"    : [i[0] for i in R_of_sct_testdata], 
-    "Time SC: 1; Test R"    : [i[1] for i in R_of_sct_testdata],     
-    "Time SC: 0; Test MAE"  : [i[0] for i in mae_of_sct_testdata], 
-    "Time SC: 1; Test MAE"  : [i[1] for i in mae_of_sct_testdata], 
+
+    "Time SC: 0;  Optimal MAE NN: R"    : [i[0] for i in R_of_sct_mae], 
+    "Time SC: 0;  Optimal R NN: R"      : [i[0] for i in R_of_sct_R],
+
+    "Time SC: 1;  Optimal MAE NN: R"    : [i[1] for i in R_of_sct_mae],     
+    "TIme SC: 1;  Optimal R NN: R"      : [i[1] for i in R_of_sct_R],
+
+    "Time SC: 0;  Optimal MAE NN: MAE"  : [i[0] for i in mae_of_sct_mae], 
+    "Time SC: 0;  Optimal R NN: MAE"    : [i[0] for i in mae_of_sct_R],
+
+    "Time SC: 1;  Optimal MAE NN: MAE"  : [i[1] for i in mae_of_sct_mae], 
+    "Time SC: 1; Optimal R NN: MAE"    : [i[1] for i in mae_of_sct_R], 
+
     
-    "Time Increasing: 0 : R"    : [i[0] for i in R_of_increasing_mae], 
-    "Time Increasing: 1 : R"    : [i[1] for i in R_of_increasing_mae],     
-    "Time Increasing: 0 : MAE"  : [i[0] for i in mae_of_increasing_mae] , 
-    "Time Increasing: 1 : MAE"  : [i[1] for i in mae_of_increasing_mae], 
+    "Time Increasing: 0;  Optimal MAE NN: R"    : [i[0] for i in R_of_increasing_mae], 
+    "Time Increasing: 0;  Optimal R NN: R"      : [i[0] for i in R_of_increasing_R],
 
-    "Time Increasing: 0; Test R"    : [i[0] for i in R_of_increasing_testdata], 
-    "Time Increasing: 1; Test R"    : [i[1] for i in R_of_increasing_testdata],     
-    "Time Increasing: 0; Test MAE"  : [i[0] for i in mae_of_increasing_testdata] , 
-    "Time Increasing: 1; Test MAE"  : [i[1] for i in mae_of_increasing_testdata], 
+    "Time Increasing: 1;  Optimal MAE NN: R"    : [i[1] for i in R_of_increasing_mae],     
+    "TIme Increasing: 1;  Optimal R NN: R"      : [i[1] for i in R_of_increasing_R],
 
-    "Day 1 : R"    : [i[0] for i in R_of_tr_testdata], 
-    "Day 2 : R"    : [i[1] for i in R_of_tr_testdata], 
-    "Day 3 : R"    : [i[2] for i in R_of_tr_testdata], 
+    "Time Increasing: 0;  Optimal MAE NN: MAE"  : [i[0] for i in mae_of_increasing_mae] , 
+    "Time Increasing: 0;  Optimal R NN: MAE"    : [i[0] for i in mae_of_increasing_R],
 
-    "Day 1 : MAE"    : [i[0] for i in mae_of_tr_testdata], 
-    "Day 2 : MAE"    : [i[1] for i in mae_of_tr_testdata], 
-    "Day 3 : MAE"    : [i[2] for i in mae_of_tr_testdata],     
-    
-    "Day 1 : Test R"    : [i[0] for i in R_of_tr_testdata], 
-    "Day 2 : Test R"    : [i[1] for i in R_of_tr_testdata], 
-    "Day 3 : Test R"    : [i[2] for i in R_of_tr_testdata], 
+    "Time Increasing: 1;  Optimal MAE NN: MAE"  : [i[1] for i in mae_of_increasing_mae], 
+    "Time Increasing: 1; Optimal R NN: MAE"    : [i[1] for i in mae_of_increasing_R],
 
-    "Day 1 : Test MAE"    : [i[0] for i in mae_of_tr_testdata], 
-    "Day 2 : Test MAE"    : [i[1] for i in mae_of_tr_testdata], 
-    "Day 3 : Test MAE"    : [i[2] for i in mae_of_tr_testdata]
+    "Day 1;  Optimal R NN: R"    : [i[0] for i in R_of_tr_R], 
+    "Day 2;  Optimal R NN: R"    : [i[1] for i in R_of_tr_R], 
+    "Day 3;  Optimal R NN: R"    : [i[2] for i in R_of_tr_R], 
+
+    "Day 1;  Optimal MAE NN: R"    : [i[0] for i in R_of_tr_mae], 
+    "Day 2;  Optimal MAE NN: R"    : [i[1] for i in R_of_tr_mae], 
+    "Day 3;  Optimal MAE NN: R"    : [i[2] for i in R_of_tr_mae], 
+
+    "Day 1;  Optimal R NN: MAE"    : [i[0] for i in mae_of_tr_R], 
+    "Day 2;  Optimal R NN: MAE"    : [i[1] for i in mae_of_tr_R], 
+    "Day 3;  Optimal R NN: MAE"    : [i[2] for i in mae_of_tr_R], 
+
+    "Day 1;  Optimal MAE NN: MAE"    : [i[0] for i in mae_of_tr_mae], 
+    "Day 2;  Optimal MAE NN: MAE"    : [i[1] for i in mae_of_tr_mae], 
+    "Day 3;  Optimal MAE NN: MAE"    : [i[2] for i in mae_of_tr_mae], 
 
     }
 
 dict_all = DataFrame({ key:pd.Series(value) for key, value in dict_all.items() })
 dict_all.to_csv('Final MAE and R  - Sum {} - Epochs {} - Folds {}.csv'.format(sum_nodes, num_epochs, k_folds), index=False)
-
-print(best_architecture)
