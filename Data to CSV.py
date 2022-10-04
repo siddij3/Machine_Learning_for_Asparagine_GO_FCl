@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-# coding: utf-8
-
 # In[12]:
 
 
@@ -124,7 +121,7 @@ if len(filenames)>0:
   for i in filenames[0:]:
     #print('File appended: '+i)
     df= df.append(transform_data(i),ignore_index=True,sort=False)
-df.to_csv('aggregated_data.csv',index=False)
+df.to_csv('aggregated_data2.csv',index=False)
 
 
 # In[15]:
