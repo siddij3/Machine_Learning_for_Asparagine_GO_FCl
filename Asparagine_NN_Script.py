@@ -20,7 +20,7 @@ import tensorflow as tf
 import numpy as np
 import os
 
-dataset = read_csv('aggregated_data2.csv')
+dataset = read_csv('aggregated_data.csv')
 dataset = shuffle(dataset)
 
 std_scaler = StandardScaler()
@@ -145,10 +145,10 @@ k_folds = 4
 num_val_samples = len(train_labels) // k_folds
 
 
-n1_start, n2_start = 7,7
+n1_start, n2_start = 23,7
 sum_nodes = 32 #32
 
-num_epochs = 400 #500
+num_epochs = 600 #500
 batch_size = 32 #50
 verbose = 0
 
@@ -166,7 +166,7 @@ print("\n")
 best_architecture = [0,0]
 
 dict_lowest_MAE,dict_highest_R  = {}, {}
-best_mae_networks, best_mae_history = 0,0
+best_networks, best_history = 0,0
 
 mae_best  = 10
 
@@ -176,9 +176,9 @@ mae_best  = 10
 # %%
 #(STEPS FROM DEEP LEARNING WITH PYTHON BY MANNING)
 
-for i in range(n1_start, sum_nodes):
+for i in range(n1_start, n1_start +1):
 
-    for j in range(n2_start, sum_nodes):
+    for j in range(n2_start, n2_start +1):
         if (i+j > sum_nodes):
             continue
         
@@ -216,9 +216,9 @@ for i in range(n1_start, sum_nodes):
 
         if (mae_recent <= mae_best):
             mae_best = mae_recent
-            best_mae_networks = k_models
+            best_networks = k_models
             best_architecture = [j,i]
-            best_mae_history = [ np.mean([x[z] for x in k_mae_history]) for z in range(num_epochs)]
+            best_history = [ np.mean([x[z] for x in k_mae_history]) for z in range(num_epochs)]
         
         print(mae_best, mae_recent, best_architecture)
 
@@ -226,9 +226,9 @@ for i in range(n1_start, sum_nodes):
 print("Models done")
 # %%
 # Find the model with the lowest error
-optimal_NNs_mae = best_mae_networks
+optimal_NNs  = best_networks
 i = 0
-for model in optimal_NNs_mae:
+for model in optimal_NNs :
     model.save("Model {} number {}".format(best_architecture, i))
     i +=1
 
@@ -249,12 +249,12 @@ def smooth_curve(points, factor=0.7):
 
 print(best_architecture)
 
-smooth_mae_history = smooth_curve(best_mae_history)
+smooth_mae_history = smooth_curve(best_history)
 
 #   _predictions =DataFrame({ key:pd.Series(value) for key, value in _predictions.items() })
 dict_epochs = { 
-    "Epochs" : range(1, len(best_mae_history) + 1),
-    "Lowest MAE": best_mae_history,
+    "Epochs" : range(1, len(best_history) + 1),
+    "Lowest MAE": best_history,
 
     "Smoothed Epochs": range(1, len(smooth_mae_history) + 1),
 
@@ -557,40 +557,40 @@ vbs = 1
 start_time = 1
 param_batches = 10
 
-str_MAE = "MAE"
-
+str = "All data"
+str_test = "Test data"
 # %% [markdown]
 # #### Isolating Increasing PPM and Time
 print("Isolating Increasing PPM and Time")
-R_of_increasing_mae, mae_of_increasing_mae = IsolateBinaryTime(optimal_NNs_mae, dataset, 'Increasing PPM', start_time, param_batches, vbs, str_MAE)
-R_of_increasing_testdata, mae_of_increasing_testdata = IsolateBinaryTime(optimal_NNs_mae, test_dataset, 'Increasing PPM', start_time, param_batches, vbs, "TEST DATA")
+R_of_increasing , mae_of_increasing  = IsolateBinaryTime(optimal_NNs , dataset, 'Increasing PPM', start_time, param_batches, vbs, str )
+R_of_increasing_testdata, mae_of_increasing_testdata = IsolateBinaryTime(optimal_NNs , test_dataset, 'Increasing PPM', start_time, param_batches, vbs, str_test)
 
 
 # %% [markdown]
 # #### Isolating Spin Coating
 print("Isolating Spin Coating")
-R_of_sc_mae, mae_of_sc_mae = isolateParam(optimal_NNs_mae, dataset, 'Spin Coating', 0, 2, 0, param_batches, vbs, str_MAE)
-R_of_sc_testdata, mae_of_sc_testdata = isolateParam(optimal_NNs_mae, test_dataset, 'Spin Coating', 0, 2, 0, param_batches, vbs, "TEST DATA")
+R_of_sc , mae_of_sc  = isolateParam(optimal_NNs , dataset, 'Spin Coating', 0, 2, 0, param_batches, vbs, str )
+R_of_sc_testdata, mae_of_sc_testdata = isolateParam(optimal_NNs , test_dataset, 'Spin Coating', 0, 2, 0, param_batches, vbs, str_test)
 
 # %% [markdown]
 # #### Isolating Time
 print("Isolating Time")
 
-R_time_mae, mae_averages_time_mae = isolateParam(optimal_NNs_mae, dataset, 'Time', 0, 51, start_time, param_batches, vbs, str_MAE)
-R_time_testdata, mae_averages_time_testdata = isolateParam(optimal_NNs_mae, test_dataset, 'Time', 0, 51, start_time, param_batches, vbs, "TEST DATA")
+R_time , mae_averages_time  = isolateParam(optimal_NNs , dataset, 'Time', 0, 51, start_time, param_batches, vbs, str )
+R_time_testdata, mae_averages_time_testdata = isolateParam(optimal_NNs , test_dataset, 'Time', 0, 51, start_time, param_batches, vbs, str_test)
 
 # %% [markdown]
 # #### Isolating Spin Coating and Time
 print("Isolating Spin Coating and Time")
-R_of_sct_mae, mae_of_sct_mae = IsolateBinaryTime(optimal_NNs_mae, dataset, 'Spin Coating', start_time, param_batches, vbs, str_MAE)
-R_of_sct_testdata, mae_of_sct_testdata = IsolateBinaryTime(optimal_NNs_mae, test_dataset, 'Spin Coating', start_time, param_batches, vbs, "TEST DATA")
+R_of_sct , mae_of_sct  = IsolateBinaryTime(optimal_NNs , dataset, 'Spin Coating', start_time, param_batches, vbs, str )
+R_of_sct_testdata, mae_of_sct_testdata = IsolateBinaryTime(optimal_NNs , test_dataset, 'Spin Coating', start_time, param_batches, vbs, str_test)
 
 # %% [markdown]
 # #### Repeat Sensor Use
 print("Isolating Repeat Sensor Use and Time")
 
-R_of_tr_mae, mae_of_tr_mae = repeatSensor(
-    optimal_NNs_mae, 
+R_of_tr , mae_of_tr  = repeatSensor(
+    optimal_NNs , 
     dataset, 
     'Repeat Sensor Use', 
     'Time',
@@ -599,7 +599,7 @@ R_of_tr_mae, mae_of_tr_mae = repeatSensor(
     start_time, 
     param_batches, 
     vbs, 
-    str_MAE
+    str 
     )
 
 
@@ -608,44 +608,44 @@ R_of_tr_mae, mae_of_tr_mae = repeatSensor(
 
 
 dict_all = {
-    "SC: R"    : R_of_sc_mae,
-    "SC: MAE"  : mae_of_sc_mae,
+    "SC: R"    : R_of_sc ,
+    "SC: MAE"  : mae_of_sc ,
     "SC Test: R"    : R_of_sc_testdata,
     "SC Test: MAE"  : mae_of_sc_testdata,
 
     "Time": [i for i in range(1, 51)],
-    "Time:  R"    : R_time_mae, 
-    "Time:  MAE"  : mae_averages_time_mae, 
+    "Time:  R"    : R_time , 
+    "Time:  MAE"  : mae_averages_time , 
     "Time: Test R"    : R_time_testdata, 
     "Time: Test MAE"  : mae_averages_time_testdata, 
 
-    "Time SC: 0;: R"    : [i[0] for i in R_of_sct_mae], 
-    "Time SC: 1: R"    : [i[1] for i in R_of_sct_mae],     
-    "Time SC: 0 : MAE"  : [i[0] for i in mae_of_sct_mae], 
-    "Time SC: 1 : MAE"  : [i[1] for i in mae_of_sct_mae], 
+    "Time SC: 0;: R"    : [i[0] for i in R_of_sct ], 
+    "Time SC: 1: R"    : [i[1] for i in R_of_sct ],     
+    "Time SC: 0 : MAE"  : [i[0] for i in mae_of_sct ], 
+    "Time SC: 1 : MAE"  : [i[1] for i in mae_of_sct ], 
 
     "Time SC: 0; Test R"    : [i[0] for i in R_of_sct_testdata], 
     "Time SC: 1; Test R"    : [i[1] for i in R_of_sct_testdata],     
     "Time SC: 0; Test MAE"  : [i[0] for i in mae_of_sct_testdata], 
     "Time SC: 1; Test MAE"  : [i[1] for i in mae_of_sct_testdata], 
 
-    "Time Increasing: 0 : R"    : [i[0] for i in R_of_increasing_mae], 
-    "Time Increasing: 1 : R"    : [i[1] for i in R_of_increasing_mae],     
-    "Time Increasing: 0 : MAE"  : [i[0] for i in mae_of_increasing_mae] , 
-    "Time Increasing: 1 : MAE"  : [i[1] for i in mae_of_increasing_mae], 
+    "Time Increasing: 0 : R"    : [i[0] for i in R_of_increasing ], 
+    "Time Increasing: 1 : R"    : [i[1] for i in R_of_increasing ],     
+    "Time Increasing: 0 : MAE"  : [i[0] for i in mae_of_increasing ] , 
+    "Time Increasing: 1 : MAE"  : [i[1] for i in mae_of_increasing ], 
 
     "Time Increasing: 0; Test R"    : [i[0] for i in R_of_increasing_testdata], 
     "Time Increasing: 1; Test R"    : [i[1] for i in R_of_increasing_testdata],     
     "Time Increasing: 0; Test MAE"  : [i[0] for i in mae_of_increasing_testdata] , 
     "Time Increasing: 1; Test MAE"  : [i[1] for i in mae_of_increasing_testdata], 
 
-    "Day 1 : R"    : [i[0] for i in R_of_tr_mae], 
-    "Day 2 : R"    : [i[1] for i in R_of_tr_mae], 
-    "Day 3 : R"    : [i[2] for i in R_of_tr_mae], 
+    "Day 1 : R"    : [i[0] for i in R_of_tr ], 
+    "Day 2 : R"    : [i[1] for i in R_of_tr ], 
+    "Day 3 : R"    : [i[2] for i in R_of_tr ], 
 
-    "Day 1 : MAE"    : [i[0] for i in mae_of_tr_mae], 
-    "Day 2 : MAE"    : [i[1] for i in mae_of_tr_mae], 
-    "Day 3 : MAE"    : [i[2] for i in mae_of_tr_mae],     
+    "Day 1 : MAE"    : [i[0] for i in mae_of_tr ], 
+    "Day 2 : MAE"    : [i[1] for i in mae_of_tr ], 
+    "Day 3 : MAE"    : [i[2] for i in mae_of_tr ],     
     
  #   "Day 1 : Test R"    : [i[0] for i in R_of_tr_testdata], 
  #   "Day 2 : Test R"    : [i[1] for i in R_of_tr_testdata], 
