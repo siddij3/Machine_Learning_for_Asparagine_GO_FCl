@@ -552,6 +552,114 @@ def repeatSensor(optimal_NNs, data, parameter1, parameter2, start_index, end_ind
 
     return averages_R, averages_mae
 
+def daysElapsed(optimal_NNs, data, param1, param2,  batch, verbose): 
+    # Split the data labels with spin coating first
+
+    param3 = 'Time'
+    unique_vals_sc = np.unique(data[param1]) #Spin Coating
+    unique_vals_days = np.unique(data[param2]) #Days Elapsed
+
+    days = []
+    for j in unique_vals_days: #[1, 2 ,3...]
+            days.append([x for _, x in data.groupby(data[param2] == j)  ][1])
+
+    time_days = []
+    for j in range(0, 51):
+        time_days.append([[x for _, x in data.groupby(val[param3] == j)  ][1] for val in days])
+
+    #[time][day elapsed][spin coated]    
+    all_vals = [[[x.index.values for _, x in data.groupby(unique_days[i][param1] == 0)] for i,val in enumerate(unique_days)] for unique_days in time_days] 
+    
+    scaled_features = scaleDataset(all_features.copy())
+
+    feats = [[[scaled_features.iloc[sc]  for sc in days] for days in times] for times in all_vals]
+    labels = [[[data_labels.to_numpy()[sc]  for sc in days] for days in times] for times in all_vals]
+
+    shared_mae, shared_R = [], []
+    _predictions = {}
+
+
+    for t, times in enumerate(feats):
+        days_tmp_mae, days_tmp_R = [], []
+
+        for d, days in enumerate(times):
+            sc_tmp_mae, sc_tmp_R = [], []
+
+            for sc, isSpin in enumerate(days):
+
+                tmp_mae, tmp_R = [None]*k_folds, [None]*k_folds
+                avg_predictions = [None]*k_folds
+                
+                for k, NN in enumerate(optimal_NNs):
+                    test_loss, test_mae, test_mse = NN.evaluate(
+                                                isSpin, 
+                                                labels[t][d][sc],
+                                                batch_size=batch,  
+                                                verbose=vbs
+                                                )
+
+                    
+                    tmp, tmp_predictions = Pearson(NN, isSpin, labels[t][d][sc], batch, verbose) 
+                    tmp_R[k] = tmp
+                    tmp_mae[k] = test_mae
+
+                    dict_title_real = "Real NN {} Correlation for T {}, Day {}: SC {}".format(k, t,  unique_vals_days[d], sc)
+                    dict_title = "Predicted NN {} Correlation for T {}, Day {}: SC {}".format(k, t, unique_vals_days[d], sc)
+
+                    _predictions[dict_title_real] = labels[t][d][sc].tolist()
+                    _predictions[dict_title] = tmp_predictions.tolist()
+
+                    avg_predictions[k] = tmp_predictions.tolist()
+
+
+                dict_average = "Averages for T {} - Days {} SC {}:".format(t, d, sc)
+                arr_avg_predictions = np.transpose(avg_predictions)
+                _predictions[dict_average] = [np.mean(z) for z in arr_avg_predictions]
+
+                sc_tmp_mae.append(sum(tmp_mae)/len(tmp_mae))
+                sc_tmp_R.append(sum(tmp_R)/len(tmp_R))
+
+            days_tmp_mae.append(sc_tmp_mae)
+            days_tmp_R.append(sc_tmp_R)
+
+        shared_mae.append(days_tmp_mae)
+        shared_R.append(days_tmp_R)
+
+    
+    _predictions = DataFrame({ key:pd.Series(value) for key, value in _predictions.items() })
+    _predictions.to_csv('Optimal {} - Isolated {} and {} - Sum {} - Epochs {} - Folds {}.csv'.format(mae_or_R, param1, param2, sum_nodes, num_epochs, k_folds), index=False)
+
+
+    R_ = {}
+    MAE_  = {}
+
+    for d, days in enumerate(shared_R[0]):
+        for sc, isSC in enumerate(shared_R[0][d]):
+            tmp_time_R, tmp_time_MAE = [], []
+
+    
+            #print(t, time[d][sc], len(time), unique_vals_days[d], unique_vals_sc[sc])
+            #print(t, shared_mae[t][d][sc], len(time), unique_vals_days[d])
+            #print('\n')
+
+            tmp_time_R = [ time[d][sc] for t, time in enumerate(shared_R)]
+            tmp_time_MAE = [ shared_mae[t][d][sc]  for t, time in enumerate(shared_R)]
+
+            print(len(tmp_time_R),  unique_vals_days[d], unique_vals_sc[sc])
+            print(len(tmp_time_MAE), )
+
+            MAE_title = "Elapsed Day {}: SC {}; MAE".format(unique_vals_days[d], sc)
+            R_title = "Elapsed Day {}: SC {}; R".format(unique_vals_days[d], sc)
+            
+            MAE_[MAE_title] = tmp_time_MAE
+            R_[R_title] = tmp_time_R
+
+    R_ = DataFrame({  key:pd.Series(value) for key, value in R_.items() })
+    MAE_ = DataFrame({ key:pd.Series(value) for key, value in MAE_.items() })
+    R_MAE = pd.concat([R_, MAE_])
+
+    return R_MAE#non_sc_days, sc_days
+
 # %%
 start_index= 0
 end_index = 3
