@@ -21,7 +21,7 @@ import numpy as np
 import os
 
 #dataset = read_csv('aggregated_data.csv')
-dataset = read_csv('data_six_params.csv')
+dataset = read_csv('shortened_data.csv')
 dataset = shuffle(dataset)
 
 std_scaler = StandardScaler()
@@ -45,8 +45,8 @@ def importData(data, scaler):
         'Spin Coating':train_features[:, 2] ,
         'Increaing PPM':train_features[:, 3], 
         'Temperature':train_features[:, 4], 
-        'Repeat Sensor Use':train_features[:, 5] 
-       # 'Days Elapsed':train_features[:, 6]
+        'Repeat Sensor Use':train_features[:, 5] ,
+        'Days Elapsed':train_features[:, 6]
         }
     train_features = DataFrame(dict)
 
@@ -57,8 +57,8 @@ def importData(data, scaler):
         'Spin Coating':test_features[:, 2] ,
         'Increaing PPM':test_features[:, 3], 
         'Temperature':test_features[:, 4], 
-        'Repeat Sensor Use':test_features[:, 5]
-      #  'Days Elapsed':test_features[:, 6]
+        'Repeat Sensor Use':test_features[:, 5],
+        'Days Elapsed':test_features[:, 6]
         }
     test_features = DataFrame(dict)
 
@@ -80,7 +80,7 @@ def build_model(n1, n2):
   
 
     model = Sequential([
-    layers.Dense(n1, activation=tf.nn.relu, input_shape=[6]),
+    layers.Dense(n1, activation=tf.nn.relu, input_shape=[7]),
     layers.Dense(n2, activation=tf.nn.relu),
     layers.Dense(1)
     ])
@@ -147,10 +147,10 @@ num_val_samples = len(train_labels) // k_folds
 
 
 n1_start, n2_start = 7,7
-sum_nodes = 32 #32
+sum_nodes = 15 #32
 
-num_epochs = 400 #500
-batch_size = 32 #50
+num_epochs = 500 #500
+batch_size = 50 #50
 verbose = 0
 
 #filepath = '.\\epochs {} - Sum {} - Epochs {} - Batch {} - Data {}\\'.format(num_epochs, sum_nodes, batch_size, "both")
@@ -284,8 +284,8 @@ def scaleDataset(data):
         'Spin Coating':data[:, 2] ,
         'Increaing PPM':data[:, 3], 
         'Temperature':data[:, 4], 
-        'Repeat Sensor Use':data[:, 5]
-       # 'Days Elapsed':data[:, 6]
+        'Repeat Sensor Use':data[:, 5],
+        'Days Elapsed':data[:, 6]
         }
     return DataFrame(dict)
 
@@ -445,94 +445,63 @@ def IsolateBinaryTime(optimal_NNs, data, parameter, start_time, batch, vbs, mae_
 
     return averages_R, averages_mae
 
-
 def repeatSensor(optimal_NNs, data, parameter1, parameter2, start_index, end_index, start_time, batch, vbs, mae_or_R):
 
-    # Split the data labels with RSU
-    repeat_index= [np.where(data[parameter1].to_numpy()  == i+1)[0] for i in range(start_index, end_index)]
+    unique_vals_repeat = np.unique(data[parameter1]) #Repeat Sensor Use
+    unique_vals_time = np.unique(data[parameter2]) #Time
 
-    shared_tr_1, shared_tr_2, shared_tr_3 = [], [], []
+    rsu = [[x for _, x in data.groupby(data[parameter1] == j)  ][1] for j in unique_vals_repeat]
 
-    times_index = []
-    for i in range(0, 51):
-        times_index.append(np.where(data[parameter2].to_numpy()  == i)[0].tolist())
-
-        tr_1_tmp, tr_2_tmp, tr_3_tmp = [], [], []
-
-        for j in range(len(repeat_index)):
-    
-            for index_123 in repeat_index[j]:
-
-                if index_123 in times_index[i] and j == 0:
-                    tr_1_tmp.append(index_123)
-                elif index_123 in times_index[i] and j == 1:
-                    tr_2_tmp.append(index_123)
-                elif index_123 in times_index[i] and j == 2:
-                    tr_3_tmp.append(index_123)
-
-        shared_tr_1.append(tr_1_tmp)
-        shared_tr_2.append(tr_2_tmp)
-        shared_tr_3.append(tr_3_tmp)
-
+    time_rsu = [[[x for _, x in data.groupby(val[parameter2] == j)  ][1] for val in rsu] for j in unique_vals_time]
+ 
     scaled_features = scaleDataset(all_features.copy())
     #The full features of the data points that use certain time values
-    tr_features = []
-    tr_labels = []
 
 
-    for i in range(0, 51):
-        tr_features.append([
-            scaled_features.iloc[shared_tr_1[i]], 
-            scaled_features.iloc[shared_tr_2[i]], 
-            scaled_features.iloc[shared_tr_3[i]]
-            ])
-
-        tr_labels.append([
-            data_labels.to_numpy()[shared_tr_1[i]], 
-            data_labels.to_numpy()[shared_tr_2[i]], 
-            data_labels.to_numpy()[shared_tr_3[i]]
-            ])
-
-
+    feats = [[scaled_features.iloc[rsu]  for rsu in times] for times in time_rsu]
+    labels = [[data_labels.to_numpy()[rsu]  for rsu in times]  for times in time_rsu]
 
     tr_mae = []
     tr_R = []
     _predictions = {}
-    for i in range(start_time, 51):
+    for t, times in enumerate(feats):
         tr_tmp_mae, tr_tmp_R = [], []
 
 
-        for j in range(start_index, end_index):
+        for rsu, numberUse in enumerate(times):
             tmp_mae, tmp_R = [None]*k_folds, [None]*k_folds
-            k = 0
 
             avg_predictions = [None]*k_folds
 
-            for NN in optimal_NNs:
-                test_loss, test_mae, test_mse = NN.evaluate(tr_features[i][j], tr_labels[i][j], batch_size=batch,  verbose=vbs)
+            for k, NN in enumerate(optimal_NNs):
+                test_loss, test_mae, test_mse = NN.evaluate(
+                    numberUse, 
+                    labels[t][rsu], 
+                    batch_size=batch,  
+                    verbose=vbs)
                 
 
-                tmp, tmp_predictions = Pearson(NN, tr_features[i][j], tr_labels[i][j], batch, verbose) 
+                tmp, tmp_predictions = Pearson(NN, numberUse, labels[t][rsu], batch, verbose) 
 
                 tmp_R[k] = tmp
                 tmp_mae[k] = test_mae
 
 
-                dict_title_real = "Real NN {} Correlation for T {}, Repeat {}: {} ".format(k, i, j,  mae_or_R)
-                dict_title = "Predicted NN {} Correlation for T {}, Repeat {}: {} ".format(k, i, j,  mae_or_R)
+                dict_title_real = "Real NN {} Correlation for T {}, Repeat {}: {} ".format(k, t, rsu,  mae_or_R)
+                dict_title = "Predicted NN {} Correlation for T {}, Repeat {}: {} ".format(k, t, rsu,  mae_or_R)
                 
-                _predictions[dict_title_real] = tr_labels[i][j].tolist()
+                _predictions[dict_title_real] = labels[t][rsu].tolist()
                 _predictions[dict_title] = tmp_predictions.tolist()
 
                 avg_predictions[k] = tmp_predictions.tolist()
-                k+=1
 
-            dict_average = "Averages for T {} - Repeat {}:".format(i, j)
+
+            dict_average = "Averages for T {} - Repeat {}:".format(t, rsu)
             arr_avg_predictions = np.transpose(avg_predictions)
             _predictions[dict_average] = [np.mean(z) for z in arr_avg_predictions]
 
-            tr_tmp_mae.append(tmp_mae)
-            tr_tmp_R.append(tmp_R)
+            tr_tmp_mae.append(sum(tmp_mae)/len(tmp_mae))
+            tr_tmp_R.append(sum(tmp_R)/len(tmp_R))
 
         tr_mae.append(tr_tmp_mae)
         tr_R.append(tr_tmp_R)
@@ -545,10 +514,10 @@ def repeatSensor(optimal_NNs, data, parameter1, parameter2, start_index, end_ind
     _predictions.to_csv('Optimal {} - Isolated {} and {} - Sum {} - Epochs {} - Folds {}.csv'.format(mae_or_R, parameter1, parameter2, sum_nodes, num_epochs, k_folds), index=False)
 
     for i in tr_mae:
-        averages_mae.append([sum(i[0])/len(i[0]), sum(i[1])/len(i[1]), sum(i[2])/len(i[2])])
+        averages_mae.append([i[0], i[1], i[2]])
 
     for i in tr_R:
-        averages_R.append([sum(i[0])/len(i[0]), sum(i[1])/len(i[1]), sum(i[2])/len(i[2])])
+        averages_R.append([i[0], i[1], i[2]])
 
     return averages_R, averages_mae
 
@@ -558,14 +527,16 @@ def daysElapsed(optimal_NNs, data, param1, param2,  batch, verbose):
     param3 = 'Time'
     unique_vals_sc = np.unique(data[param1]) #Spin Coating
     unique_vals_days = np.unique(data[param2]) #Days Elapsed
+    unique_vals_time = np.unique(data['Time']) #Days Elapsed
 
     days = []
     for j in unique_vals_days: #[1, 2 ,3...]
             days.append([x for _, x in data.groupby(data[param2] == j)  ][1])
 
-    time_days = []
-    for j in range(0, 51):
-        time_days.append([[x for _, x in data.groupby(val[param3] == j)  ][1] for val in days])
+    time_days = [[[x for _, x in data.groupby(val[param3] == j)  ][1] for val in days] for j in unique_vals_time] 
+
+    #for j in range(0, 51):
+     #   time_days.append([[x for _, x in data.groupby(val[param3] == j)  ][1] for val in days])
 
     #[time][day elapsed][spin coated]    
     all_vals = [[[x.index.values for _, x in data.groupby(unique_days[i][param1] == 0)] for i,val in enumerate(unique_days)] for unique_days in time_days] 
@@ -577,7 +548,6 @@ def daysElapsed(optimal_NNs, data, param1, param2,  batch, verbose):
 
     shared_mae, shared_R = [], []
     _predictions = {}
-
 
     for t, times in enumerate(feats):
         days_tmp_mae, days_tmp_R = [], []
@@ -676,6 +646,20 @@ R_of_increasing , mae_of_increasing  = IsolateBinaryTime(optimal_NNs , dataset, 
 R_of_increasing_testdata, mae_of_increasing_testdata = IsolateBinaryTime(optimal_NNs , test_dataset, 'Increasing PPM', start_time, param_batches, vbs, str_test)
 
 
+print("Isolating Repeat Sensor Use and Time")
+R_of_tr , mae_of_tr  = repeatSensor(
+    optimal_NNs , 
+    dataset, 
+    'Repeat Sensor Use', 
+    'Time',
+   start_index, 
+    end_index, 
+    start_time, 
+    param_batches, 
+    vbs, 
+    str 
+    )
+
 # %% [markdown]
 # #### Isolating Spin Coating
 print("Isolating Spin Coating")
@@ -697,20 +681,9 @@ R_of_sct_testdata, mae_of_sct_testdata = IsolateBinaryTime(optimal_NNs , test_da
 
 # %% [markdown]
 # #### Repeat Sensor Use
-print("Isolating Repeat Sensor Use and Time")
 
-R_of_tr , mae_of_tr  = repeatSensor(
-    optimal_NNs , 
-    dataset, 
-    'Repeat Sensor Use', 
-    'Time',
-   start_index, 
-    end_index, 
-    start_time, 
-    param_batches, 
-    vbs, 
-    str 
-    )
+
+dict_daysElapsed = daysElapsed(optimal_NNs, dataset, 'Spin Coating', 'Days Elapsed',  param_batches, vbs)
 
 
 # %% [markdown]
@@ -755,19 +728,12 @@ dict_all = {
 
     "Day 1 : MAE"    : [i[0] for i in mae_of_tr ], 
     "Day 2 : MAE"    : [i[1] for i in mae_of_tr ], 
-    "Day 3 : MAE"    : [i[2] for i in mae_of_tr ],     
-    
- #   "Day 1 : Test R"    : [i[0] for i in R_of_tr_testdata], 
- #   "Day 2 : Test R"    : [i[1] for i in R_of_tr_testdata], 
-  #  "Day 3 : Test R"    : [i[2] for i in R_of_tr_testdata], 
-
-  #  "Day 1 : Test MAE"    : [i[0] for i in mae_of_tr_testdata], 
- #   "Day 2 : Test MAE"    : [i[1] for i in mae_of_tr_testdata], 
-  #  "Day 3 : Test MAE"    : [i[2] for i in mae_of_tr_testdata]
+    "Day 3 : MAE"    : [i[2] for i in mae_of_tr ]
 
     }
 
 dict_all = DataFrame({ key:pd.Series(value) for key, value in dict_all.items() })
+dict_all = pd.concat([dict_all, dict_daysElapsed])
 dict_all.to_csv('Final MAE and R  - Sum {} - Epochs {} - Folds {}.csv'.format(sum_nodes, num_epochs, k_folds), index=False)
 
 print(best_architecture)
