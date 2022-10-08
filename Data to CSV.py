@@ -6,9 +6,6 @@ import pandas as pd
 import os
 
 
-# In[13]:
-
-
 def transform_data(csvfile):
 
   df = pd.read_csv(csvfile, header=None)
@@ -18,8 +15,6 @@ def transform_data(csvfile):
   temperature_values = df.values.tolist()[2][1:]
   isRepeatUse = df.values.tolist()[3][1:]
   num_days = df.values.tolist()[4][1:]
-
-
 
   fcl_values = df.values.tolist()[5]
   fcl_values = [x for x in fcl_values if str(x) != 'nan' and 'omit' not in str(x).lower()]
@@ -42,8 +37,6 @@ def transform_data(csvfile):
   
   df2 = df[6:].dropna(axis='columns')
   
-  print(df2)
-
   k=0
   times=[]
   currents=[]
@@ -79,6 +72,9 @@ def transform_data(csvfile):
   days = []
 
   m=0
+  print(len(isSpincoated))
+  print(len(amps))
+
   for i in range(len(amps)):
     if(m==len(ppm)): 
       m=0
@@ -100,15 +96,14 @@ def transform_data(csvfile):
   return df_final
 
 
-# In[14]:
-
-
-filepath = r"C:\\Users\\junai\\Documents\\McMaster\\Food Packaging\\Thesis\\Thesis Manuscript\\Experiments\\Raw Data\\ML Parsed"
+filepath = r".\\"
+#filepath = r"C:\\Users\\junai\\Documents\\McMaster\\Food Packaging\\Thesis\\Thesis Manuscript\\Experiments\\Raw Data\\ML Parsed"
 local_download_path = os.path.expanduser(filepath)
 filenames=[]
 for filename in os.listdir(local_download_path):
     if filename.endswith('csv') and "Entries" in filename:
       filenames.append(filepath + "\\" + filename)
+      print(filename)
 
 sum = 0
 for i in range(len(filenames)):
