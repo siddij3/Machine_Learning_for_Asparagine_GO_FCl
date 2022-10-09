@@ -20,13 +20,7 @@ import tensorflow as tf
 import numpy as np
 import os
 
-#dataset = read_csv('aggregated_data.csv')
-dataset = read_csv('.\Data\\aggregated_data2.csv')
-dataset = shuffle(dataset)
 
-std_scaler = StandardScaler()
-
-# 
 
 def get_dict(tt_feats):
     dict = {
@@ -36,7 +30,10 @@ def get_dict(tt_feats):
     'Increaing PPM':tt_feats[:, 3], 
     'Temperature':tt_feats[:, 4], 
     'Repeat Sensor Use':tt_feats[:, 5] ,
-    'Days Elapsed':tt_feats[:, 6]
+    'Days Elapsed':tt_feats[:, 6],
+    'A':tt_feats[:, 7],
+    'B':tt_feats[:, 8],
+    'C':tt_feats[:, 9],
     }
     return DataFrame(dict)
 
@@ -65,7 +62,7 @@ def build_model(n1, n2):
   #Experiment with different models, thicknesses, layers, activation functions; Don't limit to only 10 nodes; Measure up to 64 nodes in 2 layers
   
     model = Sequential([
-    layers.Dense(n1, activation=tf.nn.relu, input_shape=[7]),
+    layers.Dense(n1, activation=tf.nn.relu, input_shape=[10]),
     layers.Dense(n2, activation=tf.nn.relu),
     layers.Dense(1)
     ])
@@ -73,7 +70,6 @@ def build_model(n1, n2):
     optimizer = RMSprop(0.001)
     model.compile(loss='mse', optimizer=optimizer, metrics=['mae','mse'])
     #early_stop = EarlyStopping(monitor='val_loss', patience=20, restore_best_weights=True) Doesn't work with K-fold cross validation
-
     return model #, early_stop
 
 def KCrossValidation(i, features, labels, num_val_samples, epochs, batch, verbose, n1, n2):
@@ -177,9 +173,12 @@ def isolateParam(optimal_NNs, data, parameter, batch, verbose, str_test):
     unique_vals = np.unique(data[parameter]) #Repeat Sensor Use
     param_index= [np.where(data[parameter].to_numpy()  == i)[0] for i in unique_vals]
 
-    scaled_features = scaleDataset(data.copy())
+    scaled_features = scaleDataset(all_features.copy())
     #The full features of the data points that use certain time values
+
     param_features =  [scaled_features.iloc[param_index[int(i)]] for i in unique_vals]
+
+
     param_labels = [data_labels.to_numpy()[param_index[int(i)]] for i in unique_vals]
 
     mae, R = [], []
@@ -197,7 +196,7 @@ def isolateParam(optimal_NNs, data, parameter, batch, verbose, str_test):
         batch, verbose, str_test)
 
     _predictions = DataFrame({ key:pd.Series(value) for key, value in _predictions.items() })
-    _predictions.to_csv(f'{str_test} - Isolated {parameter} - Sum {sum_nodes} - Epochs {num_epochs} - Folds {k_folds}.csv', index=False)
+    _predictions.to_csv(f'{str_test} - {parameter} - Sum {sum_nodes} - Epochs {num_epochs} - Folds {k_folds}.csv', index=False)
     
     average_R = [i for i in R]
     average_mae = [i for i in mae]
@@ -206,17 +205,14 @@ def isolateParam(optimal_NNs, data, parameter, batch, verbose, str_test):
  
 def isolateTwoParam(optimal_NNs, data, parameter1, parameter2, batch, vbs, str_test):
 
-    print(data)
     unique_vals_inner = np.unique(data[parameter1]) #Repeat Sensor Use
     unique_vals_time = np.unique(data[parameter2]) #Times
 
     inner = [[x for _, x in data.groupby(data[parameter1] == j)  ][1] for j in unique_vals_inner]   
     time_use = [[[x.index.values for _, x in data.groupby(val[parameter2] == j)  ][1] for val in inner] for j in unique_vals_time] 
  
-    scaled_features = scaleDataset(data.copy())
-
-    print([[sc for sc in rsu] for rsu in time_use])
-
+    scaled_features = scaleDataset(all_features.copy())
+    
     feats = [[scaled_features.iloc[sc]  for sc in rsu] for rsu in time_use] 
     labels = [[data_labels.to_numpy()[sc]  for sc in rsu] for rsu in time_use]
 
@@ -243,7 +239,7 @@ def isolateTwoParam(optimal_NNs, data, parameter1, parameter2, batch, vbs, str_t
         tr_R.append(tr_tmp_R)
 
     _predictions = DataFrame({ key:pd.Series(value) for key, value in _predictions.items() })
-    _predictions.to_csv(f'{str_test} Isolated {parameter1} and {parameter2} - Sum {sum_nodes} - Epochs {num_epochs} - Folds {k_folds}.csv', index=False)
+    _predictions.to_csv(f'{str_test} {parameter1} and {parameter2} - Sum {sum_nodes} - Epochs {num_epochs} - Folds {k_folds}.csv', index=False)
 
  
     averages_mae = [[j for j in i] for i in tr_mae] 
@@ -265,7 +261,7 @@ def daysElapsed(optimal_NNs, data, param1, param2,  batch, vbs):
     #[time][day elapsed][spin coated]    
     all_vals = [[[x.index.values for _, x in data.groupby(unique_days[i][param1] == 0)] for i,val in enumerate(unique_days)] for unique_days in time_days] 
     
-    scaled_features = scaleDataset(data.copy())
+    scaled_features = scaleDataset(all_features.copy())
 
     feats = [[[scaled_features.iloc[sc]  for sc in days] for days in times] for times in all_vals]
     labels = [[[data_labels.to_numpy()[sc]  for sc in days] for days in times] for times in all_vals]
@@ -299,7 +295,7 @@ def daysElapsed(optimal_NNs, data, param1, param2,  batch, vbs):
         shared_R.append(days_tmp_R)
 
     _predictions = DataFrame({ key:pd.Series(value) for key, value in _predictions.items() })
-    _predictions.to_csv(f'{param1} - Isolated {param2} - Sum {sum_nodes} - Epochs {num_epochs} - Folds {k_folds}.csv', index=False)
+    _predictions.to_csv(f'{param1} - {param2} - Sum {sum_nodes} - Epochs {num_epochs} - Folds {k_folds}.csv', index=False)
 
     R_ = {}
     MAE_  = {}
@@ -323,18 +319,23 @@ def daysElapsed(optimal_NNs, data, param1, param2,  batch, vbs):
     return R_MAE#non_sc_days, sc_days
 
 
-# ## NEURAL NETWORK PARAMETERS
+#dataset = read_csv('aggregated_data.csv')
+dataset = read_csv('.\Data\\aggregated_data_ace.csv')
+dataset = shuffle(dataset)
 
+std_scaler = StandardScaler()
+
+# ## NEURAL NETWORK PARAMETERS
 # 
 all_features, data_labels, train_dataset, test_dataset, train_features, test_features, train_labels, test_labels, = importData(dataset.copy(), std_scaler)
 k_folds = 4
 num_val_samples = len(train_labels) // k_folds
 
 
-n1_start, n2_start = 30, 10
+n1_start, n2_start = 25, 10
 sum_nodes = 40 #32
 
-num_epochs = 10 #400 #500
+num_epochs = 400 #400 #500
 batch_size = 8 #50
 verbose = 0
 
@@ -356,8 +357,8 @@ R_best  = 0
 
 
 # #### Where the Magic Happens
-for i in range(10, 11):
-    for j in range(30, 31):
+for i in range(n2_start, n2_start+1):
+    for j in range(n1_start, n1_start+1):
         if (i+j > sum_nodes):
             continue
         
@@ -431,52 +432,72 @@ dict_epochs = {
 dict_epochs = dict_epochs | dict_highest_R | dict_lowest_MAE
 dict_epochs = DataFrame({ key:pd.Series(value) for key, value in dict_epochs.items() })
 
-#df_R_MAE = pd.concat([DataFrame(dict_highest_R, index = [0]), DataFrame(dict_lowest_MAE, index = [0])])
-#dict_epochs = pd.concat([dict_epochs, df_R_MAE])
+dict_epochs.to_csv('Evolution and Architecture - Sum {} - Epochs {} - Folds {}.csv'.format(sum_nodes, num_epochs, k_folds), index=False)
 
-
-dict_epochs.to_csv('epochs - Sum {} - Epochs {} - Folds {}.csv'.format(sum_nodes, num_epochs, k_folds), index=False)
-
-
-# Scaling Data Set Function
 
 # 
 start_index= 0
 end_index = 3
-vbs = 1
+vbs = 0
 start_time = 1
 param_batches = 10
 
 str_reg = "All data"
 str_test = "Test data"
 
+str_time = 'Time'
+str_current = 'Current'
+str_increasing = 'Increasing PPM'
+str_spin =  'Spin Coating'
+str_days = 'Repeat Sensor Use'
+str_repeat = 'Days Elapsed'
+str_temp = 'Temperature'
+str_a = 'A'
+str_b = 'B'
+str_c = 'C'
+
 #  Isolating Spin Coating
 print("Isolating Spin Coating")
-R_of_sc , mae_of_sc  = isolateParam(optimal_NNs , dataset, 'Spin Coating', param_batches, vbs, str_reg )
-R_of_sc_testdata, mae_of_sc_testdata = isolateParam(optimal_NNs , test_dataset, 'Spin Coating', param_batches, vbs, str_test )
+R_of_sc , mae_of_sc  = isolateParam(optimal_NNs , all_features, 'Spin Coating', param_batches, vbs, str_reg )
+R_of_sc_testdata, mae_of_sc_testdata = isolateParam(optimal_NNs, test_dataset,  'Spin Coating', param_batches, vbs, str_test )
 
 #  Isolating Time
 print("Isolating Time")
-R_time , mae_averages_time  = isolateParam(optimal_NNs , dataset, 'Time',param_batches, vbs, str_reg )
+R_time , mae_averages_time  = isolateParam(optimal_NNs , all_features, 'Time', param_batches, vbs, str_reg )
 R_time_testdata, mae_averages_time_testdata = isolateParam(optimal_NNs , test_dataset, 'Time',param_batches, vbs, str_test )
 
+#  Isolating Increasing
+print("Isolating Increasing")
+R_of_sc , mae_of_sc  = isolateParam(optimal_NNs , all_features, 'Increasing PPM', param_batches, vbs, str_reg )
+R_of_sc_testdata, mae_of_sc_testdata = isolateParam(optimal_NNs, test_dataset,  'Increasing PPM', param_batches, vbs, str_test )
+
+#Isolating A, B, C
+print("Isolating ABC")
+R_of_A , mae_of_A  = isolateParam(optimal_NNs , all_features, 'A', param_batches, vbs, str_reg )
+R_of_B , mae_of_B  = isolateParam(optimal_NNs , all_features, 'B', param_batches, vbs, str_reg )
+R_of_C , mae_of_C  = isolateParam(optimal_NNs , all_features, 'C', param_batches, vbs, str_reg )
+
+# Isolating Days Elapsed
+R_of_sc , mae_of_sc  = isolateParam(optimal_NNs , all_features, 'Days Elapsed', param_batches, vbs, str_reg )
+R_of_sc_testdata, mae_of_sc_testdata = isolateParam(optimal_NNs, test_dataset,  'Days Elapsed', param_batches, vbs, str_test )
 
 #  Isolating Spin Coating and Time
 print("Isolating Spin Coating and Time")
-R_of_sct , mae_of_sct  = isolateTwoParam(optimal_NNs, dataset, 'Spin Coating', 'Time', param_batches, vbs, str_reg)
+R_of_sct , mae_of_sct  = isolateTwoParam(optimal_NNs, all_features, 'Spin Coating', 'Time', param_batches, vbs, str_reg)
 R_of_sct_testdata, mae_of_sct_testdata = isolateTwoParam(optimal_NNs, test_dataset, 'Spin Coating', 'Time', param_batches, vbs, str_test)
 
+
 print("Increasing PPM and Time")
-R_of_increasing , mae_of_increasing  = isolateTwoParam(optimal_NNs, dataset, 'Increasing PPM', 'Time', param_batches, vbs,str_reg )
-R_of_increasing_testdata, mae_of_increasing_testdata = isolateTwoParam(optimal_NNs , test_dataset, 'Increasing PPM', start_time, param_batches, vbs, str_test)
+R_of_increasing_time , mae_of_increasing_time  = isolateTwoParam(optimal_NNs, all_features, 'Increasing PPM', 'Time', param_batches, vbs,str_reg )
+R_of_increasing_testdata, mae_of_increasing_testdata = isolateTwoParam(optimal_NNs , test_dataset, 'Increasing PPM', 'Time', param_batches, vbs, str_test)
 
 #  Repeat Sensor Use
 print("Isolating Repeat Sensor Use and Time")
-R_of_tr , mae_of_tr  = isolateTwoParam(optimal_NNs, dataset, 'Repeat Sensor Use', 'Time', param_batches, vbs, str_reg)
+R_of_tr , mae_of_tr  = isolateTwoParam(optimal_NNs, all_features, 'Repeat Sensor Use', 'Time', param_batches, vbs, str_reg)
 
 
-print("Days Elapsed")                   
-dict_daysElapsed = daysElapsed(optimal_NNs, dataset, 'Spin Coating', 'Days Elapsed',  param_batches, vbs)
+print("Days Elapsed and Spin Coating")                   
+dict_daysElapsed = daysElapsed(optimal_NNs, all_features, 'Spin Coating', 'Days Elapsed',  param_batches, vbs)
 
 
 # # Printing to CSV
@@ -504,10 +525,10 @@ dict_all = {
     "Time SC: 0; Test MAE"  : [i[0] for i in mae_of_sct_testdata], 
     "Time SC: 1; Test MAE"  : [i[1] for i in mae_of_sct_testdata], 
 
-    "Time Increasing: 0 : R"    : [i[0] for i in R_of_increasing ], 
-    "Time Increasing: 1 : R"    : [i[1] for i in R_of_increasing ],     
-    "Time Increasing: 0 : MAE"  : [i[0] for i in mae_of_increasing ] , 
-    "Time Increasing: 1 : MAE"  : [i[1] for i in mae_of_increasing ], 
+    "Time Increasing: 0 : R"    : [i[0] for i in R_of_increasing_time ], 
+    "Time Increasing: 1 : R"    : [i[1] for i in R_of_increasing_time ],     
+    "Time Increasing: 0 : MAE"  : [i[0] for i in mae_of_increasing_time ] , 
+    "Time Increasing: 1 : MAE"  : [i[1] for i in mae_of_increasing_time ], 
 
     "Time Increasing: 0; Test R"    : [i[0] for i in R_of_increasing_testdata], 
     "Time Increasing: 1; Test R"    : [i[1] for i in R_of_increasing_testdata],     
@@ -525,6 +546,6 @@ dict_all = {
     }
 dict_all = dict_all | dict_daysElapsed
 dict_all = DataFrame({ key:pd.Series(value) for key, value in dict_all.items() })
-dict_all.to_csv('Final MAE and R  - Sum {} - Epochs {} - Folds {}.csv'.format(sum_nodes, num_epochs, k_folds), index=False)
+dict_all.to_csv('Final - Sum {} - Epochs {} - Folds {}.csv'.format(sum_nodes, num_epochs, k_folds), index=False)
 
 print(best_architecture)
