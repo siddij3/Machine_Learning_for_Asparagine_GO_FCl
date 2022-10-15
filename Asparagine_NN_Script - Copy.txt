@@ -334,10 +334,10 @@ k_folds = 4
 num_val_samples = len(train_labels) // k_folds
 
 n1_start, n2_start = 8, 8
-sum_nodes = 32 #32
+sum_nodes = 30 #32
 
-num_epochs = 400 #400 #500
-batch_size = 16 #50
+num_epochs = 350 #400 #500
+batch_size = 8 #50
 verbose = 0
 
 print("\n")
