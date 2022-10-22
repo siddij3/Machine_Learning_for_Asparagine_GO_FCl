@@ -153,6 +153,10 @@ def isolateParam(optimal_NNs, data, parameter, batch, verbose, str_test):
 
 
     param_labels = [data_labels.to_numpy()[param_index[int(i)]] for i, _ in enumerate(unique_vals)]
+    print(len(param_labels))
+    print(len(param_labels[0]))
+    print(len(param_labels[1]))
+    print(len(param_labels[2]))
 
     mae, R = [], []
     _predictions = {}
@@ -310,7 +314,7 @@ if __name__ == '__main__':
 
     #filepath = '.\\epochs {} - Sum {} - Epochs {} - Batch {} - Data {}\\'.format(num_epochs, sum_nodes, batch_size, "both")
 
-    path = ".\\"
+    path = ".\\Test Models\\"
     nnmodel = [21,10]
     optimal_NNs = [
     load_model(f'{path}Model {nnmodel} number 0'), 
@@ -345,9 +349,9 @@ if __name__ == '__main__':
     str_c = 'C'
 
     print("Isolating Spin Coating and Time")
-    R_of_sc , mae_of_sc  = isolateTwoParam(optimal_NNs, all_features, str_spin, str_days, param_batches, vbs, str_reg)
+    #R_of_sc , mae_of_sc  = isolateTwoParam(optimal_NNs, all_features, str_spin, str_days, param_batches, vbs, str_reg)
     #R_of_rsu_testdata, mae_of_rsu_testdata = 
-    #R_of_sc , mae_of_sc  = isolateParam(optimal_NNs , all_features, str_days, param_batches, vbs, str_reg )
+    R_of_sc , mae_of_sc  = isolateParam(optimal_NNs , all_features, str_repeat, param_batches, vbs, str_reg )
 
     # R_of_sct_testdata, mae_of_sct_testdata = isolateTwoParam(optimal_NNs, test_dataset, 'Spin Coating', str_increasing, param_batches, vbs, str_test)
 
