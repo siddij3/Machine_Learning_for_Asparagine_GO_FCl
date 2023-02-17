@@ -1,28 +1,33 @@
 
 # ## Importing Data
 
-
+# 
 # -*- coding: utf-8 -*-
 # Regression Example With Boston Dataset: Standardized and Wider
 import os
+import time
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
+from enum import unique
 from pandas import read_csv
-from keras.models import load_model
+from keras.models import Sequential
+from keras.models import model_from_json
+from keras.layers import Dense
 from sklearn.preprocessing import StandardScaler
+from tensorflow.keras import layers
+from keras.models import load_model
 from sklearn.utils import shuffle
 from sklearn.metrics import mean_absolute_error
+
 import math
+from tensorflow.keras.optimizers import RMSprop
 import pandas as pd
 from pandas import DataFrame
+from multiprocessing import Process
+from multiprocessing import Manager
 
 
+import tensorflow as tf
 import numpy as np
-
-
-dataset = read_csv('.\Data\\aggregated_data.csv')
-dataset = shuffle(dataset)
-
-std_scaler = StandardScaler()
 
 
 def get_dict(tt_feats):
@@ -37,6 +42,7 @@ def get_dict(tt_feats):
     'A':tt_feats[:, 7],
     'B':tt_feats[:, 8],
     'C':tt_feats[:, 9],
+    'Integrals':tt_feats[:, 10]
     }
     return DataFrame(dict)
 
@@ -60,6 +66,56 @@ def importData(data, scaler):
     return data, data_labels, train_dataset, test_dataset, train_features, test_features, train_labels, test_labels, 
 
 # # Neural Network Creation and Selection Process
+# 
+
+
+    val_data = features[i * num_val_samples: (i + 1) * num_val_samples]
+    val_targets = labels[i * num_val_samples: (i + 1) * num_val_samples]
+
+    partial_train_data = np.concatenate([features[:i * num_val_samples], features[(i + 1) * num_val_samples:]], axis=0)
+    partial_train_targets = np.concatenate([labels[:i * num_val_samples], labels[(i + 1) * num_val_samples:]],     axis=0)
+
+    model = build_model(n1, n2) #, early_stop = build_model(n1, n2)
+
+    print('Training fold #', i)
+    history = model.fit(
+        partial_train_data, partial_train_targets,
+        epochs=epochs, batch_size=batch, validation_split=0.3, verbose=verbose #, callbacks=early_stop
+    )
+
+    history = DataFrame(history.history)
+
+    test_loss, test_mae, test_mse = model.evaluate(val_data, val_targets, verbose=verbose)
+    test_R, y = Pearson(model, val_data, val_targets.to_numpy(), batch, verbose )
+
+    return_dict[i] = (model.to_json(), model.get_weights(), history['val_mae'], test_mae, test_R)
+
+def KCrossLoad(i, model, features, labels, num_val_samples, epochs, batch, verbose):
+
+    val_data = features[i * num_val_samples: (i + 1) * num_val_samples]
+    val_targets = labels[i * num_val_samples: (i + 1) * num_val_samples]
+
+    partial_train_data = np.concatenate([features[:i * num_val_samples], features[(i + 1) * num_val_samples:]], axis=0)
+    partial_train_targets = np.concatenate([labels[:i * num_val_samples], labels[(i + 1) * num_val_samples:]],     axis=0)
+    print("this was run")
+    
+    optimizer = RMSprop(0.001)
+    model.compile(loss='mse', optimizer=optimizer, metrics=['mae','mse'])
+
+    print('Training fold #', i)
+
+    history = model.fit(
+        partial_train_data, partial_train_targets,
+        epochs=epochs, batch_size=batch, validation_split=0.3, verbose=verbose #, callbacks=early_stop
+    )
+
+    history = DataFrame(history.history)
+
+    test_loss, test_mae, test_mse = model.evaluate(val_data, val_targets, verbose=verbose)
+    test_R, y = Pearson(model, val_data, val_targets.to_numpy(), batch, verbose )
+
+    return model.to_json(), model.get_weights(), history['val_mae'], test_mae, test_R
+
 def Pearson(model, features, y_true, batch, verbose_):
     y_pred = model.predict(
         features,
@@ -110,7 +166,7 @@ def smooth_curve(points, factor=0.7):
     return smoothed_points
 
 # ## Functions for Isolating Parameters
-def loop_folds(neuralNets, _predictions, R, mae, k_folds, features, labels, param1, param2, inner_val, outer_val, batch, vbs, str_test):
+def loop_folds(neuralNets, _predictions, R, mae, k_folds, features, labels,   param1, param2, inner_val, outer_val, batch, vbs, str_test):
 
     tmp_mae, tmp_R = [None]*k_folds, [None]*k_folds
     avg_predictions = [None]*k_folds
@@ -149,20 +205,16 @@ def isolateParam(optimal_NNs, data, parameter, batch, verbose, str_test):
     scaled_features = scaleDataset(all_features.copy())
     #The full features of the data points that use certain time values
 
-    param_features =  [scaled_features.iloc[param_index[int(i)]] for i, _ in enumerate(unique_vals)]
+    param_features =  [scaled_features.iloc[param_index[int(i)]] for i in unique_vals]
 
 
-    param_labels = [data_labels.to_numpy()[param_index[int(i)]] for i, _ in enumerate(unique_vals)]
-    print(len(param_labels))
-    print(len(param_labels[0]))
-    print(len(param_labels[1]))
-    print(len(param_labels[2]))
+    param_labels = [data_labels.to_numpy()[param_index[int(i)]] for i in unique_vals]
 
     mae, R = [], []
     _predictions = {}
 
-    for i, unique_val in enumerate(unique_vals):
-        print(f'{parameter}: {unique_val}')
+    for i in unique_vals:
+        print(f'{parameter}: {i}')
 
         _predictions, R, mae = loop_folds(optimal_NNs, _predictions, 
         R, mae, 
@@ -186,7 +238,7 @@ def isolateTwoParam(optimal_NNs, data, parameter1, parameter2, batch, vbs, str_t
     unique_vals_time = np.unique(data[parameter2]) #Times
 
     inner = [[x for _, x in data.groupby(data[parameter1] == j)  ][1] for j in unique_vals_inner]   
-    time_use = [[[x.index.values for _, x in data.groupby(val[parameter2] == j)  ][-1] for val in inner] for j in unique_vals_time] 
+    time_use = [[[x.index.values for _, x in data.groupby(val[parameter2] == j)  ][1] for val in inner] for j in unique_vals_time] 
  
     scaled_features = scaleDataset(all_features.copy())
     
@@ -223,7 +275,6 @@ def isolateTwoParam(optimal_NNs, data, parameter1, parameter2, batch, vbs, str_t
     averages_R = [[j for j in i] for i in tr_R] 
 
     return averages_R, averages_mae
-
 
 def daysElapsed(optimal_NNs, data, param1, param2,  batch, vbs): 
     # Split the data labels with spin coating first
@@ -296,77 +347,116 @@ def daysElapsed(optimal_NNs, data, param1, param2,  batch, vbs):
 
     return R_MAE
 
-if __name__ == '__main__':
+def create_dict(str_param, loop_values, R_val, mae_val, R_val_test, mae_val_test):
 
-    dataset = read_csv('.\Data\\aggregated_data_ace1.csv')
-    dataset = shuffle(dataset)
+    str_r =  'R {} '.format(str_param)
+    str_mae =  'MAE {}'.format(str_param)    
     
+    str_r_test =  'R Test {} '.format(str_param)
+    str_mae_test =  'MAE Test {}'.format(str_param)
+
+    return {
+    str_param: [i for i in loop_values],
+    str_r    : R_val , 
+    str_mae  : mae_val,
+
+    str_r_test: R_val_test,
+    str_mae_test: mae_val_test
+    }
+
+def create_dict_two(str_param, loop_values, R_val, mae_val):
+
+    str_r =  'R {} '.format(str_param)
+    str_mae =  'MAE {}'.format(str_param)
+
+
+    return {
+    str_param: [i for i in loop_values],
+    str_r    : R_val , 
+    str_mae  : mae_val 
+    }
+
+if __name__ == '__main__':
+    
+    dataset = shuffle(read_csv('aggregated_integrals.csv'))
+    std_scaler = StandardScaler()
+
+    # ## NEURAL NETWORK PARAMETERS
+    # 
     all_features, data_labels, train_dataset, test_dataset, train_features, test_features, train_labels, test_labels, = importData(dataset.copy(), std_scaler)
     k_folds = 4
     num_val_samples = len(train_labels) // k_folds
 
-    n1_start, n2_start = 6,6
-    sum_nodes = 32 #32
+    n1_start, n2_start = 8, 8
+    sum_nodes = 16 #32
 
-    num_epochs = 400 #500
-    batch_size = 32 #50
+    num_epochs = 10 #400 #500
+    batch_size = 16 #50
     verbose = 0
 
-    #filepath = '.\\epochs {} - Sum {} - Epochs {} - Batch {} - Data {}\\'.format(num_epochs, sum_nodes, batch_size, "both")
-
-    path = ".\\Test Models\\"
-    nnmodel = [21,10]
-    optimal_NNs = [ load_model(f'{path}Model {nnmodel} number 0'), load_model(f'{path}Model {nnmodel} number 1'),  load_model(f'{path}Model {nnmodel} number 2'), load_model(f'{path}Model {nnmodel} number 3') ]
-
-    print("\n")
-    print("path: ", path)
-    print(f"Model: Model {nnmodel}")
-    print("\n")
-    # Scaling Data Set Function
-
     # 
-    start_index= 0
-    end_index = 3
-    vbs = 0
-    start_time = 1
-    param_batches = 10
+    path = ".\\"
+    local_download_path = os.path.expanduser(path)
+    
+    optimal_NNs = [None]*k_folds
+    i = 0
+    for filename in os.listdir(local_download_path):
+        if "Model" in filename and 'number' in filename:
+            print(filename)
+            
+            optimal_NNs[i] = load_model(f'{filename}')
+            i+=1
 
-    str_reg = "All"
-    str_test = "Test"
+    best_architecture = [10, 8]
+    # optimal_NNs = [load_model(f'{path}Model {best_architecture} number 0'), load_model(f'{path}Model {best_architecture} number 1'),  load_model(f'{path}Model {best_architecture} number 2'), load_model(f'{path}Model {best_architecture} number 3') ]
+   
+    k_fold_mae, k_models, k_weights, k_mae_history, R_tmp, history = [None]*k_folds, [None]*k_folds, [None]*k_folds, [None]*k_folds, [None]*k_folds, [None]*k_folds
 
-    str_time = 'Time'
-    str_increasing = 'Increasing PPM'
-    str_spin =  'Spin Coating'
-    str_repeat = 'Repeat Sensor Use'
-    str_days = 'Days Elapsed'
+    #model_json, model_weights, k_mae_history, k_fold_mae, R_tmp =  KCrossLoad(0, optimal_NNs[0], test_features, test_labels, num_val_samples, num_epochs, batch_size, verbose)
 
-    str_a = 'A'
-    str_b = 'B'
-    str_c = 'C'
+    for fold in range(k_folds):
 
-    print("Isolating Spin Coating and Time")
-    #R_of_sc , mae_of_sc  = isolateTwoParam(optimal_NNs, all_features, str_spin, str_days, param_batches, vbs, str_reg)
-    #R_of_rsu_testdata, mae_of_rsu_testdata = 
-    R_of_sc , mae_of_sc  = isolateParam(optimal_NNs , all_features, str_repeat, param_batches, vbs, str_reg )
+        model = optimal_NNs[fold]
+        print(model.optimizer)
 
-    # R_of_sct_testdata, mae_of_sct_testdata = isolateTwoParam(optimal_NNs, test_dataset, 'Spin Coating', str_increasing, param_batches, vbs, str_test)
+        val_data = test_features[i * num_val_samples: (i + 1) * num_val_samples]
+        val_targets = test_labels[i * num_val_samples: (i + 1) * num_val_samples]
 
-    dict_sc = {
-    "SC: R"    : R_of_sc ,
-    "SC: MAE"  : mae_of_sc ,
+        partial_train_data = np.concatenate([test_features[:i * num_val_samples], test_features[(i + 1) * num_val_samples:]], axis=0)
+        partial_train_targets = np.concatenate([test_labels[:i * num_val_samples], test_labels[(i + 1) * num_val_samples:]],     axis=0)
+        print("this was run")
+        
+        optimizer = RMSprop(0.001)
+        # model.compile(loss='mse', optimizer=optimizer, metrics=['mae','mse'])
 
-     "Time SC: 0;: R"    : [i[0] for i in R_of_sc ], 
-     "Time SC: 1: R"    : [i[1] for i in R_of_sc ],     
-     "Time SC: 0 : MAE"  : [i[0] for i in mae_of_sc ], 
-     "Time SC: 1 : MAE"  : [i[1] for i in mae_of_sc ],
+        print('Training fold #', fold)
 
-    }
+        history = model.fit(
+            partial_train_data, partial_train_targets,
+            epochs=num_epochs, batch_size=batch_size, validation_split=0.3, verbose=verbose #, callbacks=early_stop
+        )
+
+        history = DataFrame(history.history)
+
+        # ___loss, test_mae, ____mse = model.evaluate(val_data, val_targets, verbose=verbose)
+
+
+        k_mae_history[fold] = history['val_mae']
+        print(k_mae_history)
+        # R_tmp[fold], y = Pearson(model, val_data, val_targets.to_numpy(), batch_size, verbose )
+
+
+    best_history_retrained = [ np.mean([x[z] for x in k_mae_history]) for z in range(num_epochs)]
+
+
+    dict_epochs = { 
  
 
-    # # Printing to CSV
+        "Retrained Results": best_history_retrained,
+        "Retrained Smoothed": smooth_curve(best_history_retrained)
+   
+    }
+    dict_epochs = DataFrame({ key:pd.Series(value) for key, value in dict_epochs.items() })
 
-    dict_all = dict_sc 
-    dict_all = DataFrame({ key:pd.Series(value) for key, value in dict_all.items() })
-    dict_all.to_csv(f'Final - Days Elapsed Only.csv'.format(sum_nodes, num_epochs, k_folds), index=False)
+    dict_epochs.to_csv('Evolution and Architecture Retrained - Sum {} - Epochs {} - Folds {}.csv'.format(sum_nodes, num_epochs, k_folds), index=False)
 
-  

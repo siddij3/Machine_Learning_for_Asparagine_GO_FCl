@@ -86,7 +86,7 @@ def build_model(n1, n2):
 
     return model #, early_stop
 
-def KCrossValidation(i, features, labels, num_val_samples, epochs, batch, verbose, n1, n2, return_dict):
+def KCrossValidation(i, features, labels, num_val_samples, epochs, batch, verbose, n1, n2):
 
     val_data = features[i * num_val_samples: (i + 1) * num_val_samples]
     val_targets = labels[i * num_val_samples: (i + 1) * num_val_samples]
@@ -107,7 +107,7 @@ def KCrossValidation(i, features, labels, num_val_samples, epochs, batch, verbos
     test_loss, test_mae, test_mse = model.evaluate(val_data, val_targets, verbose=verbose)
     test_R, y = Pearson(model, val_data, val_targets.to_numpy(), batch, verbose )
 
-    return_dict[i] = (model.to_json(), model.get_weights(), history['val_mae'], test_mae, test_R)
+    return model, history['val_mae'], test_mae, test_R
 
 def Pearson(model, features, y_true, batch, verbose_):
     y_pred = model.predict(
@@ -400,10 +400,10 @@ if __name__ == '__main__':
     k_folds = 4
     num_val_samples = len(train_labels) // k_folds
 
-    n1_start, n2_start = 8, 8
-    sum_nodes = 18 #32
+    n1_start, n2_start = 15, 15
+    sum_nodes = 30 #32
 
-    num_epochs = 50 #400 #500
+    num_epochs = 400 #400 #500
     batch_size = 16 #50
     verbose = 0
 
@@ -424,62 +424,35 @@ if __name__ == '__main__':
     R_best  = 0
 
     # #### Where the Magic Happens
-    for i in range(n2_start, sum_nodes):
-        for j in range(n1_start, sum_nodes):
-            if (i+j > sum_nodes):
-                continue
-            
-            print("first hidden layer", j)
-            print("second hidden layer", i)
-            k_fold_mae, k_models, k_weights, k_mae_history, R_tmp = [None]*k_folds, [None]*k_folds, [None]*k_folds, [None]*k_folds, [None]*k_folds
 
-            _futures = [None]*k_folds
-            manager = Manager()
-            return_dict = manager.dict()
-
-            for fold in range(k_folds):
-                _futures[fold] = Process(target=KCrossValidation, 
-                                              args=(  fold, 
-                                                train_features, 
-                                                train_labels, 
-                                                num_val_samples, 
-                                                num_epochs, 
-                                                batch_size, 
-                                                verbose, 
-                                                j, 
-                                                i, return_dict))
-                _futures[fold].start()   
-                
-            for job in _futures:
-                job.join()
-
-        # (model.to_json(), model.get_weights(), history['val_mae'], test_mae, test_mse, test_R)
-            for fold in range(k_folds):
-                k_models[fold] = model_from_json(return_dict.values()[fold][0]) #model is a JSON file
-                k_weights[fold] = return_dict.values()[fold][1]
-                k_models[fold].set_weights(k_weights[fold])
-
-                k_mae_history[fold] = return_dict.values()[fold][2]
-                k_fold_mae[fold] = return_dict.values()[fold][3]
-
-                R_tmp[fold] = return_dict.values()[fold][4]
-
-            
-
-            R_recent = sum(R_tmp)/len(R_tmp)
-            mae_recent = sum(k_fold_mae)/len(k_fold_mae)
+    k_fold_mae, k_models, k_weights, k_mae_history, R_tmp = [None]*k_folds, [None]*k_folds, [None]*k_folds, [None]*k_folds, [None]*k_folds
 
 
-            dict_highest_R['R: {}, {}'.format(j, i)] = R_recent
-            dict_lowest_MAE['MAE: {}, {}'.format(j, i)] = mae_recent
+    for fold in range(k_folds):
+        k_models[fold], k_mae_history[fold],  k_fold_mae[fold], R_tmp[fold] = KCrossValidation( 
+                                                                                fold, 
+                                                                                train_features, 
+                                                                                train_labels, 
+                                                                                num_val_samples, 
+                                                                                num_epochs, 
+                                                                                batch_size, 
+                                                                                verbose, 
+                                                                                n1_start, 
+                                                                                n2_start) 
+                                                
+    
 
-            if (mae_recent <= mae_best):
-                mae_best = mae_recent
-                best_networks = k_models
-                best_architecture = [j,i]
-                best_history = [ np.mean([x[z] for x in k_mae_history]) for z in range(num_epochs)]
-            
-            print(mae_best, mae_recent, best_architecture)
+    R_recent = sum(R_tmp)/len(R_tmp)
+    mae_recent = sum(k_fold_mae)/len(k_fold_mae)
+
+
+    dict_highest_R['R: {}, {}'.format(n1_start, n2_start)] = R_recent
+    dict_lowest_MAE['MAE: {}, {}'.format(n1_start, n2_start)] = mae_recent
+
+
+    best_history = [ np.mean([x[z] for x in k_mae_history]) for z in range(num_epochs)]
+    
+    print(mae_best, mae_recent, best_architecture)
 
 
     # 
