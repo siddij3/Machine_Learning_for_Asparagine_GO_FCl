@@ -5,44 +5,52 @@
 # -*- coding: utf-8 -*-
 # Regression Example With Boston Dataset: Standardized and Wider
 import os
-import math
-
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 from enum import unique
 from pandas import read_csv
 from keras.models import Sequential
 from keras.models import model_from_json
 from keras.layers import Dense
-from keras.callbacks import EarlyStopping
-
-from tensorflow.keras import layers
-from tensorflow.keras.optimizers import RMSprop
-
+#from keras.callbacks import EarlyStopping
 from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
+from tensorflow.keras import layers
+from keras.models import load_model
 from sklearn.utils import shuffle
 from sklearn.metrics import mean_absolute_error
-from sklearn.metrics.pairwise import euclidean_distances
-from sklearn import datasets
 
-import dicts_functions
+
+import pickle
 from  Data_to_CSV_Integrals_imports import transform_data
 
+import math
+from tensorflow.keras.optimizers import RMSprop
 import pandas as pd
 from pandas import DataFrame
-
 from multiprocessing import Process
 from multiprocessing import Manager
+
 
 import tensorflow as tf
 import numpy as np
 
-from matplotlib import pyplot as plt
-from matplotlib.patches import Circle
-import seaborn as sns
-from psynlig import pca_loadings_map
 
 
+
+def get_dict(tt_feats):
+    dict = {
+    'Time':tt_feats[:, 0], 
+    'Current':tt_feats[:, 1], 
+    'Spin Coating':tt_feats[:, 2] ,
+    'Increaing PPM':tt_feats[:, 3], 
+    'Temperature':tt_feats[:, 4], 
+    'Repeat Sensor Use':tt_feats[:, 5] ,
+    'Days Elapsed':tt_feats[:, 6],
+    'A':tt_feats[:, 7],
+    'B':tt_feats[:, 8],
+    'C':tt_feats[:, 9],
+    'Integrals':tt_feats[:, 10]
+    }
+    return DataFrame(dict)
 
 def importData(data, scaler):
 
@@ -55,8 +63,8 @@ def importData(data, scaler):
     train_labels = train_features.pop('Concentration')
     test_labels = test_features.pop('Concentration')
 
-    train_features = dicts_functions.get_dict(scaler.fit_transform(train_features.to_numpy()))
-    test_features = dicts_functions.get_dict(scaler.fit_transform(test_features.to_numpy()))
+    train_features = get_dict(scaler.fit_transform(train_features.to_numpy()))
+    test_features = get_dict(scaler.fit_transform(test_features.to_numpy()))
 
     #For later use
     data_labels = data.pop('Concentration')
@@ -65,11 +73,11 @@ def importData(data, scaler):
 
 # # Neural Network Creation and Selection Process
 # 
-def build_model(input, n1, n2):
+def build_model(n1, n2):
   #Experiment with different models, thicknesses, layers, activation functions; Don't limit to only 10 nodes; Measure up to 64 nodes in 2 layers
   
     model = Sequential([
-    layers.Dense(n1, activation=tf.nn.relu, input_shape=[input]),
+    layers.Dense(n1, activation=tf.nn.relu, input_shape=[11]),
     layers.Dense(n2, activation=tf.nn.relu),
     layers.Dense(1)
     ])
@@ -80,93 +88,7 @@ def build_model(input, n1, n2):
 
     return model #, early_stop
 
-def PCA_Decomposition(data, std_scaler, components):
-
-    
-    Xstd = std_scaler.fit_transform(data)
-
-    pca_data = PCA(n_components=components)
-    Xpca  = pca_data.fit_transform(Xstd)
-
-    print('Explained variation per principal component: {}'.format(pca_data.explained_variance_ratio_), sum(pca_data.explained_variance_ratio_))
-
-    tmp = []
-    for i in range(components):
-        tmp.append('PCA {}'.format(i))
-
-    principal_data_df = pd.DataFrame(data = Xpca , columns = tmp)
-
-    return pca_data, Xpca, principal_data_df
-
-def bubble(PCA, feature_names):
-    plt.style.use('seaborn-talk')
-    
-    kwargs = {
-        'heatmap': {
-        'vmin': -1,
-        'vmax': 1,
-                    },
-        }
-
-    pca_loadings_map(
-        PCA,
-        feature_names,
-        bubble=True,
-        annotate=False,
-        **kwargs
-    )
-
-    kwargs['heatmap']['vmin'] = 0
-    pca_loadings_map(
-        PCA,
-        feature_names,
-        bubble=True,
-        annotate=False,
-        plot_style='absolute',
-        **kwargs
-    )
-
-    plt.show()
-
-def euclidean(X, Xpca, feature_names):
-    ccircle = []
-    eucl_dist = []
-
-    for i,j in enumerate(X .T):
-
-        corr = [np.corrcoef(j, Xpca[:, z])[0,1] for z in range(11)]
-        ccircle.append([sqr for sqr in corr])
-        eucl_dist.append(np.sqrt(sum([sqr**2 for sqr in corr])))
-
-    for _w, x_val in enumerate(X .T):
-        for _y, z_val in enumerate(X .T):
-            if (_w >= _y):
-                continue
-
-            with plt.style.context(('seaborn-whitegrid')):
-                fig, axs = plt.subplots(figsize=(6, 6))
-                for i,j in enumerate(eucl_dist):
-                    arrow_col = plt.cm.cividis((eucl_dist[i] - np.array(eucl_dist).min())/\
-                                            (np.array(eucl_dist).max() - np.array(eucl_dist).min()) )
-                    axs.arrow(0,0, # Arrows start at the origin
-                            ccircle[i][_w],  #0 for PC1
-                            ccircle[i][_y],  #1 for PC2
-                            lw = 2, # line width
-                            length_includes_head=True, 
-                            color = arrow_col,
-                            fc = arrow_col,
-                            head_width=0.05,
-                            head_length=0.05)
-                    axs.text(ccircle[i][_w]/2,ccircle[i][_y]/2, feature_names[i])
-                # Draw the unit circle, for clarity
-                circle = Circle((0, 0), 1, facecolor='none', edgecolor='k', linewidth=1, alpha=0.5)
-                axs.add_patch(circle)
-                axs.set_xlabel(f"PCA {_w + 1}")
-                axs.set_ylabel(f"PCA {_y + 1}")
-            plt.tight_layout()
-            plt.show()
-
-def KCrossValidation(i, features, labels, num_val_samples, epochs, batch, verbose, input_params, n1, n2, return_dict):
+def KCrossValidation(i, features, labels, num_val_samples, epochs, batch, verbose, n1, n2, return_dict):
 
     val_data = features[i * num_val_samples: (i + 1) * num_val_samples]
     val_targets = labels[i * num_val_samples: (i + 1) * num_val_samples]
@@ -174,7 +96,7 @@ def KCrossValidation(i, features, labels, num_val_samples, epochs, batch, verbos
     partial_train_data = np.concatenate([features[:i * num_val_samples], features[(i + 1) * num_val_samples:]], axis=0)
     partial_train_targets = np.concatenate([labels[:i * num_val_samples], labels[(i + 1) * num_val_samples:]],     axis=0)
 
-    model = build_model(input_params, n1, n2) #, early_stop = build_model(n1, n2)
+    model = build_model(n1, n2) #, early_stop = build_model(n1, n2)
 
     print('Training fold #', i)
     history = model.fit(
@@ -187,13 +109,20 @@ def KCrossValidation(i, features, labels, num_val_samples, epochs, batch, verbos
     test_loss, test_mae, test_mse = model.evaluate(val_data, val_targets, verbose=verbose)
     test_R, y = Pearson(model, val_data, val_targets.to_numpy(), batch, verbose )
 
+    symbolic_weights = getattr(model.optimizer, 'weights')
+    weight_values = tf.keras.backened.batch_get_value(symbolic_weights)
+    with open('optimizer.pkl', 'wb') as f:
+        pickle.dump(weight_values, f)
+
     return_dict[i] = (model.to_json(), model.get_weights(), history['val_mae'], test_mae, test_R)
 
 def Pearson(model, features, y_true, batch, verbose_):
     y_pred = model.predict(
         features,
         batch_size=batch,
-        verbose=verbose_
+        verbose=verbose_,
+        workers=3,
+        use_multiprocessing=True,
     )
 
     tmp_numerator, tmp_denominator_real,  tmp_denominator_pred = 0, 0,0
@@ -224,7 +153,7 @@ def MAE(model, features, y_true, batch, verbose_):
 
 def scaleDataset(scaleData):
     scaleData = std_scaler.fit_transform(scaleData.to_numpy())
-    return DataFrame(dicts_functions.get_dict(scaleData))
+    return DataFrame(get_dict(scaleData))
 
 def smooth_curve(points, factor=0.7):
     smoothed_points = []
@@ -236,11 +165,219 @@ def smooth_curve(points, factor=0.7):
             smoothed_points.append(point)
     return smoothed_points
 
+# ## Functions for Isolating Parameters
+def loop_folds(neuralNets, _predictions, R, mae, k_folds, features, labels,   param1, param2, inner_val, outer_val, batch, vbs, str_test):
+
+    tmp_mae, tmp_R = [None]*k_folds, [None]*k_folds
+    avg_predictions = [None]*k_folds
+
+    for j, NN in enumerate(neuralNets):
+        test_mae = MAE(NN, features, labels, batch, vbs)
+
+        tmp, tmp_predictions = Pearson(NN, features, labels, batch, vbs) 
+        tmp_R[j] = tmp
+        tmp_mae[j] = test_mae
+
+        #dict_title = f"Predicted NN {j} for {param1},{inner_val}; {param2},{outer_val} - {str_test}"
+        #_predictions[dict_title] = tmp_predictions.tolist()
+
+        avg_predictions[j] = tmp_predictions.tolist()
+    
+    dict_average = f"Averages for {param1},{inner_val}; {param2},{outer_val}"
+    dict_title_real = f"Real for {param1},{inner_val}; {param2},{outer_val} - {str_test}"
+
+    _predictions[dict_title_real] = labels.tolist()
+
+    arr_avg_predictions = np.transpose(avg_predictions)
+    _predictions[dict_average] = [np.mean(i) for i in arr_avg_predictions]
+
+    R.append(sum(tmp_R)/len(tmp_R))
+    mae.append(sum(tmp_mae)/len(tmp_mae))
+
+    return _predictions, R, mae
+
+def isolateParam(optimal_NNs, data, parameter, batch, verbose, str_test): 
+    # Split the data labels with time
+
+    unique_vals = np.unique(data[parameter]) #Repeat Sensor Use
+    param_index= [np.where(data[parameter].to_numpy()  == i)[0] for i in unique_vals]
+
+    scaled_features = scaleDataset(all_features.copy())
+    #The full features of the data points that use certain time values
+
+    param_features =  [scaled_features.iloc[param_index[int(i)]] for i in unique_vals]
+
+
+    param_labels = [data_labels.to_numpy()[param_index[int(i)]] for i in unique_vals]
+
+    mae, R = [], []
+    _predictions = {}
+
+    for i in unique_vals:
+        print(f'{parameter}: {i}')
+
+        _predictions, R, mae = loop_folds(optimal_NNs, _predictions, 
+        R, mae, 
+        k_folds, 
+        param_features[int(i)], param_labels[int(i)],   
+        parameter, "", 
+        int(i), None, 
+        batch, verbose, str_test)
+
+    _predictions = DataFrame({ key:pd.Series(value) for key, value in _predictions.items() })
+    _predictions.to_csv(f'{str_test} - {parameter} - Sum {sum_nodes} - Epochs {num_epochs} - Folds {k_folds}.csv', index=False)
+    
+    average_R = [i for i in R]
+    average_mae = [i for i in mae]
+
+    return average_R, average_mae
+ 
+def isolateTwoParam(optimal_NNs, data, parameter1, parameter2, batch, vbs, str_test):
+
+    unique_vals_inner = np.unique(data[parameter1]) #Repeat Sensor Use
+    unique_vals_time = np.unique(data[parameter2]) #Times
+
+    inner = [[x for _, x in data.groupby(data[parameter1] == j)  ][1] for j in unique_vals_inner]   
+    time_use = [[[x.index.values for _, x in data.groupby(val[parameter2] == j)  ][1] for val in inner] for j in unique_vals_time] 
+ 
+    scaled_features = scaleDataset(all_features.copy())
+    
+    feats = [[scaled_features.iloc[sc]  for sc in rsu] for rsu in time_use] 
+    labels = [[data_labels.to_numpy()[sc]  for sc in rsu] for rsu in time_use]
+
+    tr_mae = []
+    tr_R = []
+    _predictions = {}
+    for i, time_vals in enumerate(feats):
+        tr_tmp_mae, tr_tmp_R = [], []
+
+        for j, rsu_vals in enumerate(time_vals):
+
+            print(f'{parameter1}: {unique_vals_inner[j]}', f'{parameter2}: {unique_vals_time[i]}')
+            
+            _predictions, tr_tmp_R, tr_tmp_mae = loop_folds(optimal_NNs, _predictions, 
+            tr_tmp_R, tr_tmp_mae, 
+            k_folds, 
+            rsu_vals, labels[i][j],   
+            parameter1, parameter2, 
+            j, i, 
+            batch, vbs, str_test)
+
+
+        tr_mae.append(tr_tmp_mae)
+        tr_R.append(tr_tmp_R)
+
+    _predictions = DataFrame({ key:pd.Series(value) for key, value in _predictions.items() })
+    _predictions.to_csv(f'{str_test} {parameter1} and {parameter2} - Sum {sum_nodes} - Epochs {num_epochs} - Folds {k_folds}.csv', index=False)
+
+ 
+    averages_mae = [[j for j in i] for i in tr_mae] 
+    averages_R = [[j for j in i] for i in tr_R] 
+
+    return averages_R, averages_mae
+
+def daysElapsed(optimal_NNs, data, param1, param2,  batch, vbs): 
+    # Split the data labels with spin coating first
+
+    param3 = 'Time'
+    unique_vals_sc = np.unique(data[param1]) #Spin Coating
+    unique_vals_days = np.unique(data[param2]) #Days Elapsed
+    unique_vals_time = np.unique(data[param3])
+
+    days = [[x for _, x in data.groupby(data[param2] == j)  ][1] for j in unique_vals_days]
+    time_days = [[[x for _, x in data.groupby(val[param3] == j)  ][1] for val in days] for j in unique_vals_time] 
+
+    #[time][day elapsed][spin coated]    
+    all_vals = [[[x.index.values for _, x in data.groupby(unique_days[i][param1] == 0)] for i,val in enumerate(unique_days)] for unique_days in time_days] 
+    
+    scaled_features = scaleDataset(all_features.copy())
+
+    feats = [[[scaled_features.iloc[sc]  for sc in days] for days in times] for times in all_vals]
+    labels = [[[data_labels.to_numpy()[sc]  for sc in days] for days in times] for times in all_vals]
+
+    shared_mae, shared_R = [], []
+    _predictions = {}
+
+
+    for t, times in enumerate(feats):
+        days_tmp_mae, days_tmp_R = [], []
+
+        for d, days in enumerate(times):
+            sc_tmp_mae, sc_tmp_R = [], []
+
+            print(f'{param2}: {unique_vals_days[d]}', f'{param3}: {unique_vals_time[t]}')
+
+            for sc, isSpin in enumerate(days):
+
+                _predictions, sc_tmp_R, sc_tmp_mae = loop_folds(optimal_NNs, _predictions, 
+                sc_tmp_R, sc_tmp_mae, 
+                k_folds, 
+                isSpin, labels[t][d][sc],   
+                param1, param2, 
+                d, sc, 
+                batch, vbs, "All data")
+
+            days_tmp_mae.append(sc_tmp_mae)
+            days_tmp_R.append(sc_tmp_R)
+
+        shared_mae.append(days_tmp_mae)
+        shared_R.append(days_tmp_R)
+
+    _predictions = DataFrame({ key:pd.Series(value) for key, value in _predictions.items() })
+    _predictions.to_csv(f'{param1} - {param2} - Sum {sum_nodes} - Epochs {num_epochs} - Folds {k_folds}.csv', index=False)
+
+    R_ = {}
+    MAE_  = {}
+
+    for d, days in enumerate(shared_R[0]):
+        for sc, isSC in enumerate(shared_R[0][d]):
+            tmp_time_R, tmp_time_MAE = [], []
+
+            tmp_time_R = [ time[d][sc] for t, time in enumerate(shared_R)]
+            tmp_time_MAE = [ shared_mae[t][d][sc]  for t, time in enumerate(shared_R)]
+
+            MAE_title = f" {param2} {unique_vals_days[d]}: {param1} {sc}; MAE"
+            R_title = f"   {param2} {unique_vals_days[d]}: {param1} {sc}; R"
+            
+            MAE_[MAE_title] = tmp_time_MAE
+            R_[R_title] = tmp_time_R
+
+    R_MAE = R_ | MAE_
+    #MAE_ = DataFrame({ key:pd.Series(value) for key, value in R_MAE.items() })
+
+    return R_MAE
+
+def create_dict(str_param, loop_values, R_val, mae_val, R_val_test, mae_val_test):
+
+    str_r =  'R {} '.format(str_param)
+    str_mae =  'MAE {}'.format(str_param)    
+    
+    str_r_test =  'R Test {} '.format(str_param)
+    str_mae_test =  'MAE Test {}'.format(str_param)
+
+    return {
+    str_param: [i for i in loop_values],
+    str_r    : R_val , 
+    str_mae  : mae_val,
+
+    str_r_test: R_val_test,
+    str_mae_test: mae_val_test
+    }
+
+def create_dict_two(str_param, loop_values, R_val, mae_val):
+
+    str_r =  'R {} '.format(str_param)
+    str_mae =  'MAE {}'.format(str_param)
+
+
+    return {
+    str_param: [i for i in loop_values],
+    str_r    : R_val , 
+    str_mae  : mae_val 
+    }
 
 if __name__ == '__main__':
     #dataset = read_csv('aggregated_data.csv')
-    
-    ## DATA IMPORTING AND HANDLING
 
     filepath = r".\\Data\\"
     #filepath = r"C:\\Users\\junai\\Documents\\McMaster\\Food Packaging\\Thesis\\Thesis Manuscript\\Experiments\\Raw Data\\ML Parsed"
@@ -258,31 +395,23 @@ if __name__ == '__main__':
 
     if len(filenames)>1:
         for i in filenames[1:]:
+            #print('File appended: '+i)
             df = df.append(transform_data(i),ignore_index=True,sort=False)
 
     dataset = shuffle(df)
     std_scaler = StandardScaler()
 
-    all_features, data_labels, train_dataset, test_dataset, train_features, test_features, train_labels, test_labels, = importData(dataset.copy(), std_scaler)
-   
-    # ## PRINCIPAL COMPONENT ANALYSIS
-    num_components = 11 #Minimum: Time, current, derivative
-
-    pca_data, Xpca, principal_data_df = PCA_Decomposition(all_features.copy().to_numpy(), std_scaler, num_components)
-
-    bubble(pca_data, train_dataset.keys()[0:num_components])
-    # euclidean(all_features.to_numpy(), Xpca, train_dataset.keys()[0:num_components])
-
     # ## NEURAL NETWORK PARAMETERS
     # 
+    all_features, data_labels, train_dataset, test_dataset, train_features, test_features, train_labels, test_labels, = importData(dataset.copy(), std_scaler)
     k_folds = 4
     num_val_samples = len(train_labels) // k_folds
 
     n1_start, n2_start = 8, 8
-    sum_nodes = 17 #32
+    sum_nodes = 18 #32
 
     num_epochs = 50 #400 #500
-    batch_size = 500 #50
+    batch_size = 16 #50
     verbose = 0
 
     print("\n")
@@ -301,7 +430,7 @@ if __name__ == '__main__':
     mae_best  = 10
     R_best  = 0
 
-    #### Where the Magic Happens
+    # #### Where the Magic Happens
     for i in range(n2_start, sum_nodes):
         for j in range(n1_start, sum_nodes):
             if (i+j > sum_nodes):
@@ -324,7 +453,6 @@ if __name__ == '__main__':
                                                 num_epochs, 
                                                 batch_size, 
                                                 verbose, 
-                                                num_components,
                                                 j, 
                                                 i, return_dict))
                 _futures[fold].start()   
@@ -342,10 +470,8 @@ if __name__ == '__main__':
                 k_fold_mae[fold] = return_dict.values()[fold][3]
 
                 R_tmp[fold] = return_dict.values()[fold][4]
-                print(R_tmp)
-                
-            print(sum(R_tmp))
-            print(len(R_tmp))
+
+            
 
             R_recent = sum(R_tmp)/len(R_tmp)
             mae_recent = sum(k_fold_mae)/len(k_fold_mae)
@@ -363,6 +489,7 @@ if __name__ == '__main__':
             print(mae_best, mae_recent, best_architecture)
 
 
+    # 
     # Find the model with the lowest error
     optimal_NNs  = best_networks
     i = 0
@@ -375,21 +502,24 @@ if __name__ == '__main__':
     # Plotting Loss Transition
     smooth_mae_history = smooth_curve(best_history)
 
-    #   _predictions =DataFrame({ key:pd.Series(value) for key, value in _predictions.items() })
+
+
     dict_epochs = { 
         "Epochs" : range(1, len(best_history) + 1),
         "Lowest MAE": best_history,
+
         "Smoothed Epochs": range(1, len(smooth_mae_history) + 1),
-        "Lowest MAE Smoothed": smooth_mae_history,
-        }
+
+        "Lowest MAE Smoothed": smooth_mae_history
+   
+    }
 
     dict_epochs = dict_epochs | dict_highest_R | dict_lowest_MAE
     dict_epochs = DataFrame({ key:pd.Series(value) for key, value in dict_epochs.items() })
 
-    dict_epochs.to_csv('Evolution and Architecture PCA - Sum {} - Epochs {} - Folds {}.csv'.format(sum_nodes, num_epochs, k_folds), index=False)
+    dict_epochs.to_csv('Evolution and Architecture - Sum {} - Epochs {} - Folds {}.csv'.format(sum_nodes, num_epochs, k_folds), index=False)
 
-
-    # # 
+    # 
     # start_index= 0
     # end_index = 3
     # vbs = 0
@@ -408,6 +538,8 @@ if __name__ == '__main__':
     # str_a = 'A'
     # str_b = 'B'
     # str_c = 'C'
+
+
 
     # #  Isolating Spin Coating
     # # print("Isolating Spin Coating")
@@ -428,7 +560,6 @@ if __name__ == '__main__':
     #     "Time SC: 1: R"    : [i[1] for i in R_of_sct ],     
     #     "Time SC: 0 : MAE"  : [i[0] for i in mae_of_sct ], 
     #     "Time SC: 1 : MAE"  : [i[1] for i in mae_of_sct ], 
-
     #     "Time SC: 0; Test R"    : [i[0] for i in R_of_sct_testdata], 
     #     "Time SC: 1; Test R"    : [i[1] for i in R_of_sct_testdata],     
     #     "Time SC: 0; Test MAE"  : [i[0] for i in mae_of_sct_testdata], 
@@ -439,11 +570,6 @@ if __name__ == '__main__':
     # print("Isolating Time")
     # R_time , mae_averages_time  = isolateParam(optimal_NNs , all_features, 'Time', param_batches, vbs, str_reg )
     # R_time_testdata, mae_averages_time_testdata = isolateParam(optimal_NNs , test_dataset, 'Time',param_batches, vbs, str_test )
-
-    
-    ## print("Isolating Time")
-    ## R_time , mae_averages_time  = isolateParam(optimal_NNs , all_features, str_time, param_batches, vbs, str_reg )
-    ## dict_time = create_dict(str_time, range(0, 51), R_time, mae_averages_time)
 
     # dict_time = {
     #     "Time": [i for i in range(0, 51)],
@@ -520,11 +646,10 @@ if __name__ == '__main__':
     # print("Days Elapsed and Spin Coating")                   
     # dict_daysElapsed_time = daysElapsed(optimal_NNs, all_features, 'Spin Coating', 'Days Elapsed',  param_batches, vbs)
 
-
     # # # Printing to CSV
 
     # dict_all = dict_sc | dict_time | dict_inc | dict_repeat | dict_abc | dict_daysElapsed_time
     # dict_all = DataFrame({ key:pd.Series(value) for key, value in dict_all.items() })
-    # dict_all.to_csv('PCA Final - Sum {} - Epochs {} - Folds {}.csv'.format(sum_nodes, num_epochs, k_folds), index=False)
+    # dict_all.to_csv('Final - Sum {} - Epochs {} - Folds {}.csv'.format(sum_nodes, num_epochs, k_folds), index=False)
 
     # print(best_architecture)
