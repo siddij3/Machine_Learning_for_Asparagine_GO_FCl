@@ -18,10 +18,6 @@ from pandas import DataFrame
 
 import numpy as np
 
-
-dataset = read_csv('.\Data\\aggregated_data.csv')
-dataset = shuffle(dataset)
-
 std_scaler = StandardScaler()
 
 
@@ -298,7 +294,7 @@ def daysElapsed(optimal_NNs, data, param1, param2,  batch, vbs):
 
 if __name__ == '__main__':
 
-    dataset = read_csv('.\Data\\aggregated_data_ace1.csv')
+    dataset = read_csv('aggregated_integrals.csv')
     dataset = shuffle(dataset)
     
     all_features, data_labels, train_dataset, test_dataset, train_features, test_features, train_labels, test_labels, = importData(dataset.copy(), std_scaler)
@@ -315,53 +311,22 @@ if __name__ == '__main__':
     #filepath = '.\\epochs {} - Sum {} - Epochs {} - Batch {} - Data {}\\'.format(num_epochs, sum_nodes, batch_size, "both")
 
     path = ".\\Test Models\\"
-    nnmodel = [21,10]
-    optimal_NNs = [ load_model(f'{path}Model {nnmodel} number 0'), load_model(f'{path}Model {nnmodel} number 1'),  load_model(f'{path}Model {nnmodel} number 2'), load_model(f'{path}Model {nnmodel} number 3') ]
+    # nnmodel = [21,10]
+    # optimal_NNs = [ load_model(f'{path}Model {nnmodel} number 0'), load_model(f'{path}Model {nnmodel} number 1'),  load_model(f'{path}Model {nnmodel} number 2'), load_model(f'{path}Model {nnmodel} number 3') ]
 
-    print("\n")
-    print("path: ", path)
-    print(f"Model: Model {nnmodel}")
-    print("\n")
-    # Scaling Data Set Function
+    path = "."
+    local_download_path = os.path.expanduser(path)
 
-    # 
-    start_index= 0
-    end_index = 3
-    vbs = 0
-    start_time = 1
-    param_batches = 10
+    optimal_NNs = [None]*k_folds
+    i = 0
+    for filename in os.listdir(local_download_path):
+        if "Model" in filename and 'number' in filename:
+            print(filename)
+            
+            optimal_NNs[i] = load_model(f'{filename}')
+            i+=1
 
-    str_reg = "All"
-    str_test = "Test"
 
-    str_time = 'Time'
-    str_increasing = 'Increasing PPM'
-    str_spin =  'Spin Coating'
-    str_repeat = 'Repeat Sensor Use'
-    str_days = 'Days Elapsed'
-
-    str_a = 'A'
-    str_b = 'B'
-    str_c = 'C'
-
-    print("Isolating Spin Coating and Time")
-    #R_of_sc , mae_of_sc  = isolateTwoParam(optimal_NNs, all_features, str_spin, str_days, param_batches, vbs, str_reg)
-    #R_of_rsu_testdata, mae_of_rsu_testdata = 
-    R_of_sc , mae_of_sc  = isolateParam(optimal_NNs , all_features, str_repeat, param_batches, vbs, str_reg )
-
-    # R_of_sct_testdata, mae_of_sct_testdata = isolateTwoParam(optimal_NNs, test_dataset, 'Spin Coating', str_increasing, param_batches, vbs, str_test)
-
-    dict_sc = {
-    "SC: R"    : R_of_sc ,
-    "SC: MAE"  : mae_of_sc ,
-
-     "Time SC: 0;: R"    : [i[0] for i in R_of_sc ], 
-     "Time SC: 1: R"    : [i[1] for i in R_of_sc ],     
-     "Time SC: 0 : MAE"  : [i[0] for i in mae_of_sc ], 
-     "Time SC: 1 : MAE"  : [i[1] for i in mae_of_sc ],
-
-    }
- 
 
     # # Printing to CSV
 
