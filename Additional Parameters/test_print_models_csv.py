@@ -16,6 +16,8 @@ import pandas as pd
 from pandas import DataFrame
 
 
+from aws_s3 import s3_bucket
+
 import numpy as np
 
 std_scaler = StandardScaler()
@@ -95,16 +97,6 @@ def scaleDataset(scaleData):
     scaleData = std_scaler.fit_transform(scaleData.to_numpy())
     return DataFrame(get_dict(scaleData))
 
-def smooth_curve(points, factor=0.7):
-    smoothed_points = []
-    for point in points:
-        if smoothed_points:
-            previous = smoothed_points[-1]
-            smoothed_points.append(previous * factor + point * (1 - factor))
-        else:
-            smoothed_points.append(point)
-    return smoothed_points
-
 # ## Functions for Isolating Parameters
 def loop_folds(neuralNets, _predictions, R, mae, k_folds, features, labels, param1, param2, inner_val, outer_val, batch, vbs, str_test):
 
@@ -136,161 +128,7 @@ def loop_folds(neuralNets, _predictions, R, mae, k_folds, features, labels, para
 
     return _predictions, R, mae
 
-def isolateParam(optimal_NNs, data, parameter, batch, verbose, str_test): 
-    # Split the data labels with time
 
-    unique_vals = np.unique(data[parameter]) #Repeat Sensor Use
-    param_index= [np.where(data[parameter].to_numpy()  == i)[0] for i in unique_vals]
-
-    scaled_features = scaleDataset(all_features.copy())
-    #The full features of the data points that use certain time values
-
-    param_features =  [scaled_features.iloc[param_index[int(i)]] for i, _ in enumerate(unique_vals)]
-
-
-    param_labels = [data_labels.to_numpy()[param_index[int(i)]] for i, _ in enumerate(unique_vals)]
-    print(len(param_labels))
-    print(len(param_labels[0]))
-    print(len(param_labels[1]))
-    print(len(param_labels[2]))
-
-    mae, R = [], []
-    _predictions = {}
-
-    for i, unique_val in enumerate(unique_vals):
-        print(f'{parameter}: {unique_val}')
-
-        _predictions, R, mae = loop_folds(optimal_NNs, _predictions, 
-        R, mae, 
-        k_folds, 
-        param_features[int(i)], param_labels[int(i)],   
-        parameter, "", 
-        int(i), None, 
-        batch, verbose, str_test)
-
-    _predictions = DataFrame({ key:pd.Series(value) for key, value in _predictions.items() })
-    _predictions.to_csv(f'{str_test} - {parameter} - Sum {sum_nodes} - Epochs {num_epochs} - Folds {k_folds}.csv', index=False)
-    
-    average_R = [i for i in R]
-    average_mae = [i for i in mae]
-
-    return average_R, average_mae
- 
-def isolateTwoParam(optimal_NNs, data, parameter1, parameter2, batch, vbs, str_test):
-
-    unique_vals_inner = np.unique(data[parameter1]) #Repeat Sensor Use
-    unique_vals_time = np.unique(data[parameter2]) #Times
-
-    inner = [[x for _, x in data.groupby(data[parameter1] == j)  ][1] for j in unique_vals_inner]   
-    time_use = [[[x.index.values for _, x in data.groupby(val[parameter2] == j)  ][-1] for val in inner] for j in unique_vals_time] 
- 
-    scaled_features = scaleDataset(all_features.copy())
-    
-    feats = [[scaled_features.iloc[sc]  for sc in rsu] for rsu in time_use] 
-    labels = [[data_labels.to_numpy()[sc]  for sc in rsu] for rsu in time_use]
-
-    tr_mae = []
-    tr_R = []
-    _predictions = {}
-    for i, time_vals in enumerate(feats):
-        tr_tmp_mae, tr_tmp_R = [], []
-
-        for j, rsu_vals in enumerate(time_vals):
-
-            print(f'{parameter1}: {unique_vals_inner[j]}', f'{parameter2}: {unique_vals_time[i]}')
-            
-            _predictions, tr_tmp_R, tr_tmp_mae = loop_folds(optimal_NNs, _predictions, 
-            tr_tmp_R, tr_tmp_mae, 
-            k_folds, 
-            rsu_vals, labels[i][j],   
-            parameter1, parameter2, 
-            j, i, 
-            batch, vbs, str_test)
-
-
-        tr_mae.append(tr_tmp_mae)
-        tr_R.append(tr_tmp_R)
-
-    _predictions = DataFrame({ key:pd.Series(value) for key, value in _predictions.items() })
-    _predictions.to_csv(f'{str_test} {parameter1} and {parameter2} - Sum {sum_nodes} - Epochs {num_epochs} - Folds {k_folds}.csv', index=False)
-
- 
-    averages_mae = [[j for j in i] for i in tr_mae] 
-    averages_R = [[j for j in i] for i in tr_R] 
-
-    return averages_R, averages_mae
-
-
-def daysElapsed(optimal_NNs, data, param1, param2,  batch, vbs): 
-    # Split the data labels with spin coating first
-
-    param3 = 'Time'
-    unique_vals_sc = np.unique(data[param1]) #Spin Coating
-    unique_vals_days = np.unique(data[param2]) #Days Elapsed
-    unique_vals_time = np.unique(data[param3])
-
-    days = [[x for _, x in data.groupby(data[param2] == j)  ][1] for j in unique_vals_days]
-    time_days = [[[x for _, x in data.groupby(val[param3] == j)  ][1] for val in days] for j in unique_vals_time] 
-
-    #[time][day elapsed][spin coated]    
-    all_vals = [[[x.index.values for _, x in data.groupby(unique_days[i][param1] == 0)] for i,val in enumerate(unique_days)] for unique_days in time_days] 
-    
-    scaled_features = scaleDataset(all_features.copy())
-
-    feats = [[[scaled_features.iloc[sc]  for sc in days] for days in times] for times in all_vals]
-    labels = [[[data_labels.to_numpy()[sc]  for sc in days] for days in times] for times in all_vals]
-
-    shared_mae, shared_R = [], []
-    _predictions = {}
-
-
-    for t, times in enumerate(feats):
-        days_tmp_mae, days_tmp_R = [], []
-
-        for d, days in enumerate(times):
-            sc_tmp_mae, sc_tmp_R = [], []
-
-            print(f'{param2}: {unique_vals_days[d]}', f'{param3}: {unique_vals_time[t]}')
-
-            for sc, isSpin in enumerate(days):
-
-                _predictions, sc_tmp_R, sc_tmp_mae = loop_folds(optimal_NNs, _predictions, 
-                sc_tmp_R, sc_tmp_mae, 
-                k_folds, 
-                isSpin, labels[t][d][sc],   
-                param1, param2, 
-                d, sc, 
-                batch, vbs, "All data")
-
-            days_tmp_mae.append(sc_tmp_mae)
-            days_tmp_R.append(sc_tmp_R)
-
-        shared_mae.append(days_tmp_mae)
-        shared_R.append(days_tmp_R)
-
-    _predictions = DataFrame({ key:pd.Series(value) for key, value in _predictions.items() })
-    _predictions.to_csv(f'{param1} - {param2} - Sum {sum_nodes} - Epochs {num_epochs} - Folds {k_folds}.csv', index=False)
-
-    R_ = {}
-    MAE_  = {}
-
-    for d, days in enumerate(shared_R[0]):
-        for sc, isSC in enumerate(shared_R[0][d]):
-            tmp_time_R, tmp_time_MAE = [], []
-
-            tmp_time_R = [ time[d][sc] for t, time in enumerate(shared_R)]
-            tmp_time_MAE = [ shared_mae[t][d][sc]  for t, time in enumerate(shared_R)]
-
-            MAE_title = f" {param2} {unique_vals_days[d]}: {param1} {sc}; MAE"
-            R_title = f"   {param2} {unique_vals_days[d]}: {param1} {sc}; R"
-            
-            MAE_[MAE_title] = tmp_time_MAE
-            R_[R_title] = tmp_time_R
-
-    R_MAE = R_ | MAE_
-    #MAE_ = DataFrame({ key:pd.Series(value) for key, value in R_MAE.items() })
-
-    return R_MAE
 
 if __name__ == '__main__':
 
@@ -319,19 +157,14 @@ if __name__ == '__main__':
 
     optimal_NNs = [None]*k_folds
     i = 0
-    for filename in os.listdir(local_download_path):
-        if "Model" in filename and 'number' in filename:
-            print(filename)
-            
-            optimal_NNs[i] = load_model(f'{filename}')
-            i+=1
 
+    s3 = s3_bucket()
+    for bucket in s3.buckets.all():
+            if ("wqm" in bucket.name):
+                print(bucket.name)
 
+                for obj in bucket.objects.all():
+                    print(obj.key)
 
-    # # Printing to CSV
-
-    dict_all = dict_sc 
-    dict_all = DataFrame({ key:pd.Series(value) for key, value in dict_all.items() })
-    dict_all.to_csv(f'Final - Days Elapsed Only.csv'.format(sum_nodes, num_epochs, k_folds), index=False)
-
-  
+                    with open(obj.key, 'wb') as data:
+                        s3.meta.client.download_fileobj(bucket.name, obj.key, data)

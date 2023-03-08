@@ -6,6 +6,7 @@
 # Regression Example With Boston Dataset: Standardized and Wider
 import os
 import math
+import shutil
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 from enum import unique
@@ -27,6 +28,7 @@ from sklearn import datasets
 
 import dicts_functions
 from  Data_to_CSV_Integrals_imports import transform_data
+import aws_s3
 
 import pandas as pd
 from pandas import DataFrame
@@ -75,24 +77,22 @@ def build_model(input, n1, n2):
     ])
 
     optimizer = RMSprop(0.001)
-    model.compile(loss='mse', optimizer=optimizer, metrics=['mae','mse'])
-    #early_stop = EarlyStopping(monitor='val_loss', patience=20, restore_best_weights=True) 
-
+    model.compile(loss='mse', optimizer=optimizer, metrics=['mae','mse'], run_eagerly=True)
+    
     return model #, early_stop
 
 def PCA_Decomposition(data, std_scaler, components):
 
-    
     Xstd = std_scaler.fit_transform(data)
 
     pca_data = PCA(n_components=components)
     Xpca  = pca_data.fit_transform(Xstd)
 
-    print('Explained variation per principal component: {}'.format(pca_data.explained_variance_ratio_), sum(pca_data.explained_variance_ratio_))
+    print(f'Explained variation per principal component: {pca_data.explained_variance_ratio_}', sum(pca_data.explained_variance_ratio_))
 
     tmp = []
     for i in range(components):
-        tmp.append('PCA {}'.format(i))
+        tmp.append(f'PCA {i}')
 
     principal_data_df = pd.DataFrame(data = Xpca , columns = tmp)
 
@@ -187,6 +187,8 @@ def KCrossValidation(i, features, labels, num_val_samples, epochs, batch, verbos
     test_loss, test_mae, test_mse = model.evaluate(val_data, val_targets, verbose=verbose)
     test_R, y = Pearson(model, val_data, val_targets.to_numpy(), batch, verbose )
 
+    model.save(f".\\WQM_NNs\\Model [{n1}, {n2}] {i}")
+
     return_dict[i] = (model.to_json(), model.get_weights(), history['val_mae'], test_mae, test_R)
 
 def Pearson(model, features, y_true, batch, verbose_):
@@ -237,6 +239,7 @@ def smooth_curve(points, factor=0.7):
     return smoothed_points
 
 
+
 if __name__ == '__main__':
     #dataset = read_csv('aggregated_data.csv')
     
@@ -268,9 +271,8 @@ if __name__ == '__main__':
     # ## PRINCIPAL COMPONENT ANALYSIS
     num_components = 11 #Minimum: Time, current, derivative
 
-    pca_data, Xpca, principal_data_df = PCA_Decomposition(all_features.copy().to_numpy(), std_scaler, num_components)
-
-    bubble(pca_data, train_dataset.keys()[0:num_components])
+    # pca_data, Xpca, principal_data_df = PCA_Decomposition(all_features.copy().to_numpy(), std_scaler, num_components)
+    # bubble(pca_data, train_dataset.keys()[0:num_components])
     # euclidean(all_features.to_numpy(), Xpca, train_dataset.keys()[0:num_components])
 
     # ## NEURAL NETWORK PARAMETERS
@@ -281,7 +283,7 @@ if __name__ == '__main__':
     n1_start, n2_start = 8, 8
     sum_nodes = 17 #32
 
-    num_epochs = 50 #400 #500
+    num_epochs = 4 #400 #500
     batch_size = 500 #50
     verbose = 0
 
@@ -342,17 +344,13 @@ if __name__ == '__main__':
                 k_fold_mae[fold] = return_dict.values()[fold][3]
 
                 R_tmp[fold] = return_dict.values()[fold][4]
-                print(R_tmp)
-                
-            print(sum(R_tmp))
-            print(len(R_tmp))
 
             R_recent = sum(R_tmp)/len(R_tmp)
             mae_recent = sum(k_fold_mae)/len(k_fold_mae)
 
 
-            dict_highest_R['R: {}, {}'.format(j, i)] = R_recent
-            dict_lowest_MAE['MAE: {}, {}'.format(j, i)] = mae_recent
+            dict_highest_R[f'R: {j}, {i}'] = R_recent
+            dict_lowest_MAE[f'MAE: {j}, {i}'] = mae_recent
 
             if (mae_recent <= mae_best):
                 mae_best = mae_recent
@@ -362,13 +360,22 @@ if __name__ == '__main__':
             
             print(mae_best, mae_recent, best_architecture)
 
-
-    # Find the model with the lowest error
+    # Delete all other models here instead
     optimal_NNs  = best_networks
     i = 0
-    for model in optimal_NNs :
-        model.save("Model {} number {}".format(best_architecture, i))
-        print("Models saved")
+
+    print(best_architecture)
+    
+    filepath = r"C:\\Users\\junai\\AppData\\Roaming\\Python\\Python39\\Scripts\\Asparagine Machine Learning\\Additional Parameters\\WQM_NNs"
+    local_download_path = os.path.expanduser(filepath)
+    print(local_download_path)
+    for filename in os.listdir(local_download_path):    
+        if str(best_architecture) in filename:
+            continue;
+
+        if f"Model" in filename:
+            print(filename)
+            shutil.rmtree(filepath + "\\" + filename, ignore_errors=False)
 
         i +=1
 
@@ -382,149 +389,15 @@ if __name__ == '__main__':
         "Smoothed Epochs": range(1, len(smooth_mae_history) + 1),
         "Lowest MAE Smoothed": smooth_mae_history,
         }
+    
 
+    zip_filename = "WQM_NNs"
+
+    shutil.make_archive(zip_filename, 'zip', r".\\WQM_NNs")
+    s3 = aws_s3.s3_bucket()
+    
     dict_epochs = dict_epochs | dict_highest_R | dict_lowest_MAE
     dict_epochs = DataFrame({ key:pd.Series(value) for key, value in dict_epochs.items() })
 
-    dict_epochs.to_csv('Evolution and Architecture PCA - Sum {} - Epochs {} - Folds {}.csv'.format(sum_nodes, num_epochs, k_folds), index=False)
-
-
-    # # 
-    # start_index= 0
-    # end_index = 3
-    # vbs = 0
-    # start_time = 1
-    # param_batches = 10
-
-    # str_reg = "All"
-    # str_test = "Test"
-
-    # str_time = 'Time'
-    # str_increasing = 'Increasing PPM'
-    # str_spin =  'Spin Coating'
-    # str_days = 'Repeat Sensor Use'
-    # str_repeat = 'Days Elapsed'
-
-    # str_a = 'A'
-    # str_b = 'B'
-    # str_c = 'C'
-
-    # #  Isolating Spin Coating
-    # # print("Isolating Spin Coating")
-    # R_of_sc , mae_of_sc  = isolateParam(optimal_NNs , all_features, str_spin, param_batches, vbs, str_reg )
-    # R_of_sc_testdata, mae_of_sc_testdata = isolateParam(optimal_NNs, test_dataset,  str_spin, param_batches, vbs, str_test )
-
-    # print("Isolating Spin Coating and Time")
-    # R_of_sct , mae_of_sct  = isolateTwoParam(optimal_NNs, all_features, str_spin, 'Time', param_batches, vbs, str_reg)
-    # R_of_sct_testdata, mae_of_sct_testdata = isolateTwoParam(optimal_NNs, test_dataset, str_spin, 'Time', param_batches, vbs, str_test)
-
-    # dict_sc = {
-    #     "SC: R"    : R_of_sc ,
-    #     "SC: MAE"  : mae_of_sc ,
-    #     "SC Test: R"    : R_of_sc_testdata,
-    #     "SC Test: MAE"  : mae_of_sc_testdata,
+    dict_epochs.to_csv(f'Evolution and Architecture PCA - Sum {sum_nodes} - Epochs {num_epochs} - Folds {k_folds}.csv')
         
-    #     "Time SC: 0;: R"    : [i[0] for i in R_of_sct ], 
-    #     "Time SC: 1: R"    : [i[1] for i in R_of_sct ],     
-    #     "Time SC: 0 : MAE"  : [i[0] for i in mae_of_sct ], 
-    #     "Time SC: 1 : MAE"  : [i[1] for i in mae_of_sct ], 
-
-    #     "Time SC: 0; Test R"    : [i[0] for i in R_of_sct_testdata], 
-    #     "Time SC: 1; Test R"    : [i[1] for i in R_of_sct_testdata],     
-    #     "Time SC: 0; Test MAE"  : [i[0] for i in mae_of_sct_testdata], 
-    #     "Time SC: 1; Test MAE"  : [i[1] for i in mae_of_sct_testdata], 
-    # }
-    # #  Isolating Spin Coating and Time
-    # #  Isolating Time
-    # print("Isolating Time")
-    # R_time , mae_averages_time  = isolateParam(optimal_NNs , all_features, 'Time', param_batches, vbs, str_reg )
-    # R_time_testdata, mae_averages_time_testdata = isolateParam(optimal_NNs , test_dataset, 'Time',param_batches, vbs, str_test )
-
-    
-    ## print("Isolating Time")
-    ## R_time , mae_averages_time  = isolateParam(optimal_NNs , all_features, str_time, param_batches, vbs, str_reg )
-    ## dict_time = create_dict(str_time, range(0, 51), R_time, mae_averages_time)
-
-    # dict_time = {
-    #     "Time": [i for i in range(0, 51)],
-    #     "Time:  R"    : R_time , 
-    #     "Time:  MAE"  : mae_averages_time , 
-    #     "Time: Test R"    : R_time_testdata, 
-    #     "Time: Test MAE"  : mae_averages_time_testdata
-    #     }
-
-    # #  Isolating Increasing
-    # print("Isolating Increasing")
-    # R_of_increasing , mae_of_increasing  = isolateParam(optimal_NNs , all_features, 'Increasing PPM', param_batches, vbs, str_reg )
-    # R_of_increasing_testdata, mae_of_increasing_testdata = isolateParam(optimal_NNs, test_dataset,  'Increasing PPM', param_batches, vbs, str_test )
-
-    # print("Increasing PPM and Time")
-    # R_of_increasing_time , mae_of_increasing_time  = isolateTwoParam(optimal_NNs, all_features, 'Increasing PPM', 'Time', param_batches, vbs,str_reg )
-    # R_of_increasing_time_testdata, mae_of_increasing_time_testdata = isolateTwoParam(optimal_NNs , test_dataset, 'Increasing PPM', 'Time', param_batches, vbs, str_test)
-
-    # dict_inc = {
-    #     "Increasing:  R"    : R_of_increasing , 
-    #     "Increasing:  MAE"  : mae_of_increasing , 
-    #     "Increasing: Test R"    : R_of_increasing_testdata, 
-    #     "Increasing: Test MAE"  : mae_of_increasing_testdata,
-
-    #     "Time Increasing: 0 : R"    : [i[0] for i in R_of_increasing_time ], 
-    #     "Time Increasing: 1 : R"    : [i[1] for i in R_of_increasing_time ],     
-    #     "Time Increasing: 0 : MAE"  : [i[0] for i in mae_of_increasing_time ] , 
-    #     "Time Increasing: 1 : MAE"  : [i[1] for i in mae_of_increasing_time ], 
-
-    #     "Time Increasing: 0; Test R"    : [i[0] for i in R_of_increasing_time_testdata], 
-    #     "Time Increasing: 1; Test R"    : [i[1] for i in R_of_increasing_time_testdata],     
-    #     "Time Increasing: 0; Test MAE"  : [i[0] for i in mae_of_increasing_time_testdata] , 
-    #     "Time Increasing: 1; Test MAE"  : [i[1] for i in mae_of_increasing_time_testdata], 
-    # }
-
-    # #  Isolating Repeat Sensor Use
-    # #print("Isolating Repeat Sensor Use")
-    # #R_of_rsu , mae_of_rsu  = isolateParam(optimal_NNs , all_features, 'Repeat Sensor Use', param_batches, vbs, str_reg )
-    # #R_of_rsu_testdata, mae_of_rsu_testdata = isolateParam(optimal_NNs, test_dataset,  'Repeat Sensor Use', param_batches, vbs, str_test )
-    # print("Isolating Repeat Sensor Use and Time")
-    # R_of_tr , mae_of_tr  = isolateTwoParam(optimal_NNs, all_features, 'Repeat Sensor Use', 'Time', param_batches, vbs, str_reg)
-
-    # dict_repeat = {
-
-    #     "Use 1, Time: R"    : [i[0] for i in R_of_tr ], 
-    #     "Use 2, Time: R"    : [i[1] for i in R_of_tr ], 
-    #     "Use 3, Time: R"    : [i[2] for i in R_of_tr ], 
-
-    #     "Use 1, Time: MAE"    : [i[0] for i in mae_of_tr ], 
-    #     "Use 2, Time: MAE"    : [i[1] for i in mae_of_tr ], 
-    #     "Use 3, Time: MAE"    : [i[2] for i in mae_of_tr ]
-    #     }
-
-    # #Isolating A, B, C
-    # print("Isolating ABC")
-    # R_of_A , mae_of_A  = isolateParam(optimal_NNs , all_features, 'A', param_batches, vbs, str_reg )
-    # R_of_B , mae_of_B  = isolateParam(optimal_NNs , all_features, 'B', param_batches, vbs, str_reg )
-    # R_of_C , mae_of_C  = isolateParam(optimal_NNs , all_features, 'C', param_batches, vbs, str_reg )
-
-    # dict_abc = {
-    #     "A:  R"   : R_of_A , 
-    #     "B:  R"   : R_of_B , 
-    #     "C:  R"   : R_of_C, 
-    #     "A:  MAE" : mae_of_A , 
-    #     "B:  MAE" : mae_of_B , 
-    #     "C:  MAE" : mae_of_C, 
-    # }
-
-    # # Isolating Days Elapsed
-    # #R_of_sc , mae_of_sc  = isolateParam(optimal_NNs , all_features, 'Days Elapsed', param_batches, vbs, str_reg )
-    # #R_of_sc_testdata, mae_of_sc_testdata = isolateParam(optimal_NNs, test_dataset,  'Days Elapsed', param_batches, vbs, str_test )
-
-    # #  Repeat Sensor Use
-    # print("Days Elapsed and Spin Coating")                   
-    # dict_daysElapsed_time = daysElapsed(optimal_NNs, all_features, 'Spin Coating', 'Days Elapsed',  param_batches, vbs)
-
-
-    # # # Printing to CSV
-
-    # dict_all = dict_sc | dict_time | dict_inc | dict_repeat | dict_abc | dict_daysElapsed_time
-    # dict_all = DataFrame({ key:pd.Series(value) for key, value in dict_all.items() })
-    # dict_all.to_csv('PCA Final - Sum {} - Epochs {} - Folds {}.csv'.format(sum_nodes, num_epochs, k_folds), index=False)
-
-    # print(best_architecture)
