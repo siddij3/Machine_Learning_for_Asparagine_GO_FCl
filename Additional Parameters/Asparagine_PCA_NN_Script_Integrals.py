@@ -77,7 +77,7 @@ def build_model(input, n1, n2):
     ])
 
     optimizer = RMSprop(0.001)
-    model.compile(loss='mse', optimizer=optimizer, metrics=['mae','mse'], run_eagerly=True)
+    model.compile(loss='mse', optimizer=optimizer, metrics=['mae','mse']) #, run_eagerly=True)
     
     return model #, early_stop
 
@@ -166,7 +166,7 @@ def euclidean(X, Xpca, feature_names):
             plt.tight_layout()
             plt.show()
 
-def KCrossValidation(i, features, labels, num_val_samples, epochs, batch, verbose, input_params, n1, n2, return_dict):
+def KCrossValidation(i, features, labels, num_val_samples, epochs, batch, verbose, input_params, n1, n2, return_dict, folder_name):
 
     val_data = features[i * num_val_samples: (i + 1) * num_val_samples]
     val_targets = labels[i * num_val_samples: (i + 1) * num_val_samples]
@@ -179,7 +179,10 @@ def KCrossValidation(i, features, labels, num_val_samples, epochs, batch, verbos
     print('Training fold #', i)
     history = model.fit(
         partial_train_data, partial_train_targets,
-        epochs=epochs, batch_size=batch, validation_split=0.3, verbose=verbose #, callbacks=early_stop
+        epochs=epochs, batch_size=batch, 
+        validation_split=0.3, verbose=verbose,
+        workers=3,
+        use_multiprocessing=True,
     )
 
     history = DataFrame(history.history)
@@ -187,15 +190,17 @@ def KCrossValidation(i, features, labels, num_val_samples, epochs, batch, verbos
     test_loss, test_mae, test_mse = model.evaluate(val_data, val_targets, verbose=verbose)
     test_R, y = Pearson(model, val_data, val_targets.to_numpy(), batch, verbose )
 
-    model.save(f".\\WQM_NNs\\Model [{n1}, {n2}] {i}")
+    model.save(f".\\{folder_name}\\Model [{n1}, {n2}] {i}")
 
-    return_dict[i] = (model.to_json(), model.get_weights(), history['val_mae'], test_mae, test_R)
+    return_dict[i] = (history['val_mae'], test_mae, test_R)
 
 def Pearson(model, features, y_true, batch, verbose_):
     y_pred = model.predict(
         features,
         batch_size=batch,
-        verbose=verbose_
+        verbose=verbose_,
+        workers=3,
+        use_multiprocessing=True
     )
 
     tmp_numerator, tmp_denominator_real,  tmp_denominator_pred = 0, 0,0
@@ -212,18 +217,6 @@ def Pearson(model, features, y_true, batch, verbose_):
 
     return R[0], y_pred.flatten()
 
-def MAE(model, features, y_true, batch, verbose_):
-    y_pred = model.predict(
-        features,
-        batch_size=batch,
-        verbose=verbose_,
-        workers=3,
-        use_multiprocessing=True,
-    )
-
-    MAE = mean_absolute_error(y_true, y_pred)
-    return MAE
-
 def scaleDataset(scaleData):
     scaleData = std_scaler.fit_transform(scaleData.to_numpy())
     return DataFrame(dicts_functions.get_dict(scaleData))
@@ -237,7 +230,6 @@ def smooth_curve(points, factor=0.7):
         else:
             smoothed_points.append(point)
     return smoothed_points
-
 
 
 if __name__ == '__main__':
@@ -281,11 +273,14 @@ if __name__ == '__main__':
     num_val_samples = len(train_labels) // k_folds
 
     n1_start, n2_start = 8, 8
-    sum_nodes = 17 #32
+    sum_nodes = 64 #32
 
-    num_epochs = 4 #400 #500
-    batch_size = 500 #50
+    num_epochs = 400 #400 #500
+    batch_size = 16 #50
     verbose = 0
+
+    folder_name = "WQM_NNs_main"
+
 
     print("\n")
     print("Number Folds: ", k_folds)
@@ -311,7 +306,7 @@ if __name__ == '__main__':
             
             print("first hidden layer", j)
             print("second hidden layer", i)
-            k_fold_mae, k_models, k_weights, k_mae_history, R_tmp = [None]*k_folds, [None]*k_folds, [None]*k_folds, [None]*k_folds, [None]*k_folds
+            k_fold_mae, k_mae_history, R_tmp =  [None]*k_folds, [None]*k_folds, [None]*k_folds
 
             _futures = [None]*k_folds
             manager = Manager()
@@ -328,22 +323,19 @@ if __name__ == '__main__':
                                                 verbose, 
                                                 num_components,
                                                 j, 
-                                                i, return_dict))
+                                                i, return_dict,
+                                                folder_name))
                 _futures[fold].start()   
                 
             for job in _futures:
                 job.join()
 
-        # (model.to_json(), model.get_weights(), history['val_mae'], test_mae, test_mse, test_R)
+        # ( history['val_mae'], test_mae, test_mse, test_R)
             for fold in range(k_folds):
-                k_models[fold] = model_from_json(return_dict.values()[fold][0]) #model is a JSON file
-                k_weights[fold] = return_dict.values()[fold][1]
-                k_models[fold].set_weights(k_weights[fold])
+                k_mae_history[fold] = return_dict.values()[fold][0]
+                k_fold_mae[fold] = return_dict.values()[fold][1]
+                R_tmp[fold] = return_dict.values()[fold][2]
 
-                k_mae_history[fold] = return_dict.values()[fold][2]
-                k_fold_mae[fold] = return_dict.values()[fold][3]
-
-                R_tmp[fold] = return_dict.values()[fold][4]
 
             R_recent = sum(R_tmp)/len(R_tmp)
             mae_recent = sum(k_fold_mae)/len(k_fold_mae)
@@ -354,7 +346,6 @@ if __name__ == '__main__':
 
             if (mae_recent <= mae_best):
                 mae_best = mae_recent
-                best_networks = k_models
                 best_architecture = [j,i]
                 best_history = [ np.mean([x[z] for x in k_mae_history]) for z in range(num_epochs)]
             
@@ -366,16 +357,17 @@ if __name__ == '__main__':
 
     print(best_architecture)
     
-    filepath = r"C:\\Users\\junai\\AppData\\Roaming\\Python\\Python39\\Scripts\\Asparagine Machine Learning\\Additional Parameters\\WQM_NNs"
+    filepath = f"C:\\Users\\junai\\AppData\\Roaming\\Python\\Python39\\Scripts\\Asparagine Machine Learning\\Additional Parameters\\{folder_name}"
     local_download_path = os.path.expanduser(filepath)
     print(local_download_path)
+
     for filename in os.listdir(local_download_path):    
         if str(best_architecture) in filename:
             continue;
 
         if f"Model" in filename:
             print(filename)
-            shutil.rmtree(filepath + "\\" + filename, ignore_errors=False)
+            shutil.rmtree(f".\\{filepath}\\{filename}", ignore_errors=False)
 
         i +=1
 
@@ -391,10 +383,12 @@ if __name__ == '__main__':
         }
     
 
-    zip_filename = "WQM_NNs"
+    zip_filename = folder_name
 
-    shutil.make_archive(zip_filename, 'zip', r".\\WQM_NNs")
-    s3 = aws_s3.s3_bucket()
+    shutil.make_archive(zip_filename, 'zip', f".\\{folder_name}")
+    # s3 = aws_s3.s3_bucket()
+    # s3.meta.client.upload_file('ML_Models.zip', 'wqm-ml-models', 'ML_Models.zip')
+
     
     dict_epochs = dict_epochs | dict_highest_R | dict_lowest_MAE
     dict_epochs = DataFrame({ key:pd.Series(value) for key, value in dict_epochs.items() })

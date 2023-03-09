@@ -164,7 +164,7 @@ if __name__ == '__main__':
     #                         s3.meta.client.download_fileobj(bucket.name, obj.key, data)
     #                         shutil.unpack_archive(obj.key)
 
-    path = ".\\WQM_NNs"
+    path = ".\\WQM_NNs_main"
     local_download_path = os.path.expanduser(path)
     optimal_NNs = [None]*k_folds
     i = 0
@@ -205,7 +205,7 @@ if __name__ == '__main__':
 
         k_mae_history[fold] = history['val_mae']
         tmp = reconstructed_model.predict(partial_train_data, batch_size=None, verbose=verbose)
-                                          
+        print(tmp)                     
         # R_tmp[fold], y = Pearson(reconstructed_model, val_data, val_targets.to_numpy(), batch_size, verbose )
         
 
