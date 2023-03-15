@@ -5,12 +5,12 @@
 # -*- coding: utf-8 -*-
 # Regression Example With Boston Dataset: Standardized and Wider
 import os
-import time
+import shutil
+import zipfile 
+
+
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 from enum import unique
-from pandas import read_csv
-from keras.models import Sequential
-from keras.models import model_from_json
 from keras.layers import Dense
 from sklearn.preprocessing import StandardScaler
 from tensorflow.keras import layers
@@ -26,80 +26,21 @@ from pandas import DataFrame
 from multiprocessing import Process
 from multiprocessing import Manager
 
+import aws_s3
+import file_management
+import dicts_functions
+
+
 
 import tensorflow as tf
 import numpy as np
 
 
-def get_dict(tt_feats):
-    dict = {
-    'Time':tt_feats[:, 0], 
-    'Current':tt_feats[:, 1], 
-    'Spin Coating':tt_feats[:, 2] ,
-    'Increaing PPM':tt_feats[:, 3], 
-    'Temperature':tt_feats[:, 4], 
-    'Repeat Sensor Use':tt_feats[:, 5] ,
-    'Days Elapsed':tt_feats[:, 6],
-    'A':tt_feats[:, 7],
-    'B':tt_feats[:, 8],
-    'C':tt_feats[:, 9],
-    'Integrals':tt_feats[:, 10]
-    }
-    return DataFrame(dict)
-
-def importData(data, scaler):
-
-    train_dataset = data.sample(frac=0.8, random_state=5096)
-    test_dataset = data.drop(train_dataset.index)
-
-    train_features = train_dataset.copy()
-    test_features = test_dataset.copy()
-
-    train_labels = train_features.pop('Concentration')
-    test_labels = test_features.pop('Concentration')
-
-    train_features = get_dict(scaler.fit_transform(train_features.to_numpy()))
-    test_features = get_dict(scaler.fit_transform(test_features.to_numpy()))
-
-    #For later use
-    data_labels = data.pop('Concentration')
-
-    return data, data_labels, train_dataset, test_dataset, train_features, test_features, train_labels, test_labels, 
-
-
-def KCrossLoad(i, model, features, labels, num_val_samples, epochs, batch, verbose):
-
-    val_data = features[i * num_val_samples: (i + 1) * num_val_samples]
-    val_targets = labels[i * num_val_samples: (i + 1) * num_val_samples]
-
-    partial_train_data = np.concatenate([features[:i * num_val_samples], features[(i + 1) * num_val_samples:]], axis=0)
-    partial_train_targets = np.concatenate([labels[:i * num_val_samples], labels[(i + 1) * num_val_samples:]],     axis=0)
-    print("this was run")
-    
-    # optimizer = RMSprop(0.001)
-    # model.compile(loss='mse', optimizer=optimizer, metrics=['mae','mse'])
-
-    print('Training fold #', i)
-
-    history = model.fit(
-        partial_train_data, partial_train_targets,
-        epochs=epochs, batch_size=batch, validation_split=0.3, verbose=verbose #, callbacks=early_stop
-    )
-
-    history = DataFrame(history.history)
-
-    test_loss, test_mae, test_mse = model.evaluate(val_data, val_targets, verbose=verbose)
-    test_R, y = Pearson(model, val_data, val_targets.to_numpy(), batch, verbose )
-
-    return model.to_json(), model.get_weights(), history['val_mae'], test_mae, test_R
-
 def Pearson(model, features, y_true, batch, verbose_):
     y_pred = model.predict(
         features,
         batch_size=batch,
-        verbose=verbose_,
-        workers=3,
-        use_multiprocessing=True,
+        verbose=verbose_
     )
 
     tmp_numerator, tmp_denominator_real,  tmp_denominator_pred = 0, 0,0
@@ -120,9 +61,7 @@ def MAE(model, features, y_true, batch, verbose_):
     y_pred = model.predict(
         features,
         batch_size=batch,
-        verbose=verbose_,
-        workers=3,
-        use_multiprocessing=True,
+        verbose=verbose_
     )
 
     MAE = mean_absolute_error(y_true, y_pred)
@@ -130,7 +69,7 @@ def MAE(model, features, y_true, batch, verbose_):
 
 def scaleDataset(scaleData):
     scaleData = std_scaler.fit_transform(scaleData.to_numpy())
-    return DataFrame(get_dict(scaleData))
+    return DataFrame(dicts_functions.get_dict(scaleData))
 
 def smooth_curve(points, factor=0.7):
     smoothed_points = []
@@ -144,7 +83,7 @@ def smooth_curve(points, factor=0.7):
 
 if __name__ == '__main__':
     
-    filepath = r".\\Data\\"
+    filepath = file_management.get_data_path()
     local_data_path = os.path.expanduser(filepath)
     filenames=[]
     for filename in os.listdir(local_data_path):
@@ -167,7 +106,7 @@ if __name__ == '__main__':
 
     # ## NEURAL NETWORK PARAMETERS
     # 
-    all_features, data_labels, train_dataset, test_dataset, train_features, test_features, train_labels, test_labels, = importData(dataset.copy(), std_scaler)
+    all_features, data_labels, train_dataset, test_dataset, train_features, test_features, train_labels, test_labels, = file_management.importData(dataset.copy(), std_scaler)
     k_folds = 4
     num_val_samples = len(train_labels) // k_folds
 
@@ -178,16 +117,34 @@ if __name__ == '__main__':
     batch_size = 16 #50
     verbose = 0
 
-    # 
-    path = ".\\"
+    # GET FILE FROM S3 BUCKET, UNZIP IT, 
+
+    # s3 = aws_s3.s3_bucket()
+    # for bucket in s3.buckets.all():
+    #         if ("wqm" in bucket.name):
+    #             print(bucket.name)
+
+    #             for obj in bucket.objects.all():
+    #                 print(obj.key)
+
+    #                 with open(obj.key, 'wb') as data:
+    #                     if ("WQM" in obj.key):
+    #                         s3.meta.client.download_fileobj(bucket.name, obj.key, data)
+    #                         shutil.unpack_archive(obj.key)
+
+    path = file_management.get_file_path()
+
     local_download_path = os.path.expanduser(path)
-    
     optimal_NNs = [None]*k_folds
+
     i = 0
     for filename in os.listdir(local_download_path):
-        if "Model" in filename in filename:
+        
+        if "Model" in filename:
+            print(filename)
             
-            optimal_NNs[i] = load_model(f'{filename}')
+            optimal_NNs[i] = load_model(f"{path}\\{filename}")
+            print(optimal_NNs[i].optimizer)
             i+=1
 
     best_architecture = [10, 8]
@@ -196,45 +153,42 @@ if __name__ == '__main__':
 
 
     for fold in range(k_folds):
-        model = optimal_NNs[fold]
+
+        reconstructed_model = optimal_NNs[fold]
 
         val_data = test_features[i * num_val_samples: (i + 1) * num_val_samples]
         val_targets = test_labels[i * num_val_samples: (i + 1) * num_val_samples]
 
         partial_train_data = np.concatenate([test_features[:i * num_val_samples], test_features[(i + 1) * num_val_samples:]], axis=0)
         partial_train_targets = np.concatenate([test_labels[:i * num_val_samples], test_labels[(i + 1) * num_val_samples:]],     axis=0)
-        print("this was run")
-        
-        model.compile(loss='mse', optimizer=RMSprop(0.001), metrics=['mae','mse'], run_eagerly=True)
 
-        print('Training fold #', fold)
+        # reconstructed_model.compile(loss='mse', optimizer=RMSprop(0.001), metrics=['mae','mse'], run_eagerly=True)
 
-        history = model.fit(
-            partial_train_data, partial_train_targets,
-            epochs=num_epochs, batch_size=batch_size, validation_split=0.3, verbose=verbose #, callbacks=early_stop
+        history = reconstructed_model.fit(
+        partial_train_data, partial_train_targets,
+        epochs=num_epochs, batch_size=batch_size, validation_split=0.3, verbose=verbose #, callbacks=early_stop
         )
-
+    
         history = DataFrame(history.history)
 
         # ___loss, test_mae, ____mse = model.evaluate(val_data, val_targets, verbose=verbose)
 
-
         k_mae_history[fold] = history['val_mae']
-        print(k_mae_history)
-        R_tmp[fold], y = Pearson(model, val_data, val_targets.to_numpy(), batch_size, verbose )
-
+        tmp = reconstructed_model.predict(partial_train_data, batch_size=None, verbose=verbose)
+        print(tmp)                     
+        # R_tmp[fold], y = Pearson(reconstructed_model, val_data, val_targets.to_numpy(), batch_size, verbose )
+        
 
     best_history_retrained = [ np.mean([x[z] for x in k_mae_history]) for z in range(num_epochs)]
 
 
     dict_epochs = { 
  
-
         "Retrained Results": best_history_retrained,
         "Retrained Smoothed": smooth_curve(best_history_retrained)
    
     }
     dict_epochs = DataFrame({ key:pd.Series(value) for key, value in dict_epochs.items() })
 
-    dict_epochs.to_csv('Evolution and Architecture Retrained - Sum {} - Epochs {} - Folds {}.csv'.format(sum_nodes, num_epochs, k_folds), index=False)
+    dict_epochs.to_csv(f'Evolution and Architecture Retrained - Sum {sum_nodes} - Epochs {num_epochs} - Folds {k_folds}.csv')
 

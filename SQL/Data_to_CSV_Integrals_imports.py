@@ -4,6 +4,10 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 
+from MySQLdb import _mysql
+from pandas.io import sql
+
+
 def transform_data(csvfile):
 
   df = pd.read_csv(csvfile, header=None)
@@ -131,6 +135,7 @@ def transform_data(csvfile):
 
             }
   df_final = pd.DataFrame(dict3)
+
 
   columns = df_final.columns.to_list()
 

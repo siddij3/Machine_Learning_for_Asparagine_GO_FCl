@@ -1,0 +1,3 @@
+*.csv
+aws_s3.py
+sql_manager.py
