@@ -25,48 +25,21 @@ import pandas as pd
 from pandas import DataFrame
 from multiprocessing import Process
 from multiprocessing import Manager
+
 import aws_s3
+import file_management
+import dicts_functions
 
+import sql_manager
 
+from sql_manager import sql_to_pandas
+from sql_manager import pandas_to_sql
+from sql_manager import pandas_to_sql_if_exists
 
+import re
 import tensorflow as tf
 import numpy as np
 
-
-def get_dict(tt_feats):
-    dict = {
-    'Time':tt_feats[:, 0], 
-    'Current':tt_feats[:, 1], 
-    'Spin Coating':tt_feats[:, 2] ,
-    'Increaing PPM':tt_feats[:, 3], 
-    'Temperature':tt_feats[:, 4], 
-    'Repeat Sensor Use':tt_feats[:, 5] ,
-    'Days Elapsed':tt_feats[:, 6],
-    'A':tt_feats[:, 7],
-    'B':tt_feats[:, 8],
-    'C':tt_feats[:, 9],
-    'Integrals':tt_feats[:, 10]
-    }
-    return DataFrame(dict)
-
-def importData(data, scaler):
-
-    train_dataset = data.sample(frac=0.8, random_state=5096)
-    test_dataset = data.drop(train_dataset.index)
-
-    train_features = train_dataset.copy()
-    test_features = test_dataset.copy()
-
-    train_labels = train_features.pop('Concentration')
-    test_labels = test_features.pop('Concentration')
-
-    train_features = get_dict(scaler.fit_transform(train_features.to_numpy()))
-    test_features = get_dict(scaler.fit_transform(test_features.to_numpy()))
-
-    #For later use
-    data_labels = data.pop('Concentration')
-
-    return data, data_labels, train_dataset, test_dataset, train_features, test_features, train_labels, test_labels, 
 
 def Pearson(model, features, y_true, batch, verbose_):
     y_pred = model.predict(
@@ -90,6 +63,7 @@ def Pearson(model, features, y_true, batch, verbose_):
     return R[0], y_pred.flatten()
 
 def MAE(model, features, y_true, batch, verbose_):
+
     y_pred = model.predict(
         features,
         batch_size=batch,
@@ -101,44 +75,38 @@ def MAE(model, features, y_true, batch, verbose_):
 
 def scaleDataset(scaleData):
     scaleData = std_scaler.fit_transform(scaleData.to_numpy())
-    return DataFrame(get_dict(scaleData))
-
-def smooth_curve(points, factor=0.7):
-    smoothed_points = []
-    for point in points:
-        if smoothed_points:
-            previous = smoothed_points[-1]
-            smoothed_points.append(previous * factor + point * (1 - factor))
-        else:
-            smoothed_points.append(point)
-    return smoothed_points
+    return DataFrame(dicts_functions.get_dict(scaleData))
 
 if __name__ == '__main__':
     
-    filepath = r".\\Data\\"
-    local_data_path = os.path.expanduser(filepath)
-    filenames=[]
-    for filename in os.listdir(local_data_path):
-        if filename.endswith('csv') and "ACE" in filename and 'Entries' in filename:
-            filenames.append(filepath + "\\" + filename)
+    ## DATA IMPORTING AND HANDLING
+    ## DATA IMPORTING AND HANDLING
+    table_name = sql_manager.get_table_name()
+    engine = sql_manager.connect()
 
-    _sum = 0
+    # if the table doesn't exist, create it from the csv file, 
+    # and send the file to 
+    if (not sql_manager.check_tables(engine, table_name)):
+        dataset = shuffle(file_management.create_df_from_csv())
 
-    for i in range(len(filenames)):
-        df = transform_data(filenames[i])
-        _sum+=len(df)
+        pandas_to_sql(table_name, dataset, engine)
+    else:
+        dataset = sql_to_pandas(table_name, engine)
 
-    if len(filenames)>1:
-        for i in filenames[1:]:
-            #print('File appended: '+i)
-            df = df.append(transform_data(i),ignore_index=True,sort=False)
-
-    dataset = shuffle(df)
     std_scaler = StandardScaler()
+    all_features, data_labels, train_dataset, test_dataset, train_features, test_features, train_labels, test_labels, std_scaler = file_management.importData(dataset.copy(), std_scaler)
+    
+    std_params = pd.DataFrame([std_scaler.mean_, std_scaler.scale_, std_scaler.var_], 
+                       columns = train_features.keys())
+    std_params['param_names'] = ['mean_', 'scale_', 'var_']
 
-    # ## NEURAL NETWORK PARAMETERS
-    # 
-    all_features, data_labels, train_dataset, test_dataset, train_features, test_features, train_labels, test_labels, = importData(dataset.copy(), std_scaler)
+    table_name = 'std_params'
+    if (not sql_manager.check_tables(engine, table_name)):
+        pandas_to_sql(table_name, std_params, engine)
+    else:
+        pandas_to_sql_if_exists('std_params', std_params, engine, "replace")
+
+
     k_folds = 4
     num_val_samples = len(train_labels) // k_folds
 
@@ -150,74 +118,75 @@ if __name__ == '__main__':
     verbose = 0
 
     # GET FILE FROM S3 BUCKET, UNZIP IT, 
+    path = file_management.get_file_path()
+    s3 = aws_s3.s3_bucket()
 
-    # s3 = aws_s3.s3_bucket()
-    # for bucket in s3.buckets.all():
-    #         if ("wqm" in bucket.name):
-    #             print(bucket.name)
+    aws_s3.load_from_bucket(s3, path)
 
-    #             for obj in bucket.objects.all():
-    #                 print(obj.key)
 
-    #                 with open(obj.key, 'wb') as data:
-    #                     if ("WQM" in obj.key):
-    #                         s3.meta.client.download_fileobj(bucket.name, obj.key, data)
-    #                         shutil.unpack_archive(obj.key)
-
-    path = ".\\WQM_NNs_main"
     local_download_path = os.path.expanduser(path)
     optimal_NNs = [None]*k_folds
+
     i = 0
+    tmp = ""
     for filename in os.listdir(local_download_path):
         
         if "Model" in filename:
-            print(filename)
-            
-            optimal_NNs[i] = load_model(path + "\\" + filename)
+            optimal_NNs[i] = load_model(f"{path}\\{filename}")
             print(optimal_NNs[i].optimizer)
+            tmp = re.findall(r'\d+', filename)
             i+=1
 
-    best_architecture = [10, 8]
-   
+    best_architecture = tmp
+    n1 = tmp[0]
+    n2 = tmp[1]
+    print(n1, n2)
+
     k_fold_mae, k_models, k_weights, k_mae_history, R_tmp, history = [None]*k_folds, [None]*k_folds, [None]*k_folds, [None]*k_folds, [None]*k_folds, [None]*k_folds
 
+    _futures = [None]*k_folds
+ 
+    num_components = 11
 
     for fold in range(k_folds):
+        i = fold
 
         reconstructed_model = optimal_NNs[fold]
 
-        val_data = test_features[i * num_val_samples: (i + 1) * num_val_samples]
-        val_targets = test_labels[i * num_val_samples: (i + 1) * num_val_samples]
+        val_data = train_features[i * num_val_samples: (i + 1) * num_val_samples]
+        val_targets = train_labels[i * num_val_samples: (i + 1) * num_val_samples]
 
-        partial_train_data = np.concatenate([test_features[:i * num_val_samples], test_features[(i + 1) * num_val_samples:]], axis=0)
-        partial_train_targets = np.concatenate([test_labels[:i * num_val_samples], test_labels[(i + 1) * num_val_samples:]],     axis=0)
+        partial_train_data = np.concatenate([train_features[:i * num_val_samples], train_features[(i + 1) * num_val_samples:]], axis=0)
+        partial_train_targets = np.concatenate([train_labels[:i * num_val_samples], train_labels[(i + 1) * num_val_samples:]],     axis=0)
 
-        # reconstructed_model.compile(loss='mse', optimizer=RMSprop(0.001), metrics=['mae','mse'], run_eagerly=True)
-
+        print('Training fold #', i)
         history = reconstructed_model.fit(
-        partial_train_data, partial_train_targets,
-        epochs=num_epochs, batch_size=batch_size, validation_split=0.3, verbose=verbose #, callbacks=early_stop
+            partial_train_data, partial_train_targets,
+            epochs=num_epochs, batch_size=batch_size, 
+            validation_split=0.3, verbose=verbose,
+            workers=3
         )
-    
+
         history = DataFrame(history.history)
 
-        # ___loss, test_mae, ____mse = model.evaluate(val_data, val_targets, verbose=verbose)
+        test_loss, test_mae, test_mse = reconstructed_model.evaluate(val_data, val_targets, verbose=verbose)
+        test_R, y = Pearson(reconstructed_model, val_data, val_targets.to_numpy(), batch_size, verbose )
 
+        reconstructed_model.save(f".\\{path}\\Model [{n1}, {n2}] {i}")
+
+
+
+    # ( history['val_mae'], test_mae, test_mse, test_R)
         k_mae_history[fold] = history['val_mae']
-        tmp = reconstructed_model.predict(partial_train_data, batch_size=None, verbose=verbose)
-        print(tmp)                     
-        # R_tmp[fold], y = Pearson(reconstructed_model, val_data, val_targets.to_numpy(), batch_size, verbose )
+        k_fold_mae[fold] = test_mae
+        R_tmp[fold] = test_R
+
         
 
     best_history_retrained = [ np.mean([x[z] for x in k_mae_history]) for z in range(num_epochs)]
 
 
-    dict_epochs = { 
- 
-        "Retrained Results": best_history_retrained,
-        "Retrained Smoothed": smooth_curve(best_history_retrained)
-   
-    }
+    dict_epochs = { "Retrained Results": best_history_retrained }
     dict_epochs = DataFrame({ key:pd.Series(value) for key, value in dict_epochs.items() })
 
     dict_epochs.to_csv(f'Evolution and Architecture Retrained - Sum {sum_nodes} - Epochs {num_epochs} - Folds {k_folds}.csv')

@@ -9,10 +9,7 @@ import math
 import shutil
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
-from enum import unique
-from pandas import read_csv
 from keras.models import Sequential
-from keras.models import model_from_json
 from keras.layers import Dense
 from keras.callbacks import EarlyStopping
 
@@ -22,13 +19,16 @@ from tensorflow.keras.optimizers import RMSprop
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.utils import shuffle
-from sklearn.metrics import mean_absolute_error
 from sklearn.metrics.pairwise import euclidean_distances
-from sklearn import datasets
 
 import dicts_functions
 from  Data_to_CSV_Integrals_imports import transform_data
 import aws_s3
+import file_management
+import sql_manager
+from sql_manager import sql_to_pandas
+from sql_manager import pandas_to_sql
+from sql_manager import pandas_to_sql_if_exists
 
 import pandas as pd
 from pandas import DataFrame
@@ -41,29 +41,7 @@ import numpy as np
 
 from matplotlib import pyplot as plt
 from matplotlib.patches import Circle
-import seaborn as sns
 from psynlig import pca_loadings_map
-
-
-
-def importData(data, scaler):
-
-    train_dataset = data.sample(frac=0.8, random_state=5096)
-    test_dataset = data.drop(train_dataset.index)
-
-    train_features = train_dataset.copy()
-    test_features = test_dataset.copy()
-
-    train_labels = train_features.pop('Concentration')
-    test_labels = test_features.pop('Concentration')
-
-    train_features = dicts_functions.get_dict(scaler.fit_transform(train_features.to_numpy()))
-    test_features = dicts_functions.get_dict(scaler.fit_transform(test_features.to_numpy()))
-
-    #For later use
-    data_labels = data.pop('Concentration')
-
-    return data, data_labels, train_dataset, test_dataset, train_features, test_features, train_labels, test_labels, 
 
 # # Neural Network Creation and Selection Process
 # 
@@ -236,30 +214,31 @@ if __name__ == '__main__':
     #dataset = read_csv('aggregated_data.csv')
     
     ## DATA IMPORTING AND HANDLING
+    table_name = sql_manager.get_table_name()
+    engine = sql_manager.connect()
 
-    filepath = r".\\Data\\"
-    #filepath = r"C:\\Users\\junai\\Documents\\McMaster\\Food Packaging\\Thesis\\Thesis Manuscript\\Experiments\\Raw Data\\ML Parsed"
-    local_download_path = os.path.expanduser(filepath)
-    filenames=[]
-    for filename in os.listdir(local_download_path):
-        if filename.endswith('csv') and "ACE" in filename and 'Entries' in filename:
-            filenames.append(filepath + "\\" + filename)
+    # if the table doesn't exist, create it from the csv file, 
+    # and send the file to 
+    if (not sql_manager.check_tables(engine, table_name)):
+        dataset = shuffle(file_management.create_df_from_csv())
 
-    _sum = 0
+        pandas_to_sql(table_name, dataset, engine)
+    else:
+        dataset = sql_to_pandas(table_name, engine)
 
-    for i in range(len(filenames)):
-        df = transform_data(filenames[i])
-        _sum+=len(df)
-
-    if len(filenames)>1:
-        for i in filenames[1:]:
-            df = df.append(transform_data(i),ignore_index=True,sort=False)
-
-    dataset = shuffle(df)
     std_scaler = StandardScaler()
+    all_features, data_labels, train_dataset, test_dataset, train_features, test_features, train_labels, test_labels, std_scaler = file_management.importData(dataset.copy(), std_scaler)
+    
+    std_params = pd.DataFrame([std_scaler.mean_, std_scaler.scale_, std_scaler.var_], 
+                       columns = train_features.keys())
+    std_params['param_names'] = ['mean_', 'scale_', 'var_']
 
-    all_features, data_labels, train_dataset, test_dataset, train_features, test_features, train_labels, test_labels, = importData(dataset.copy(), std_scaler)
-   
+    table_name = 'std_params'
+    if (not sql_manager.check_tables(engine, table_name)):
+        pandas_to_sql(table_name, std_params, engine)
+    else:
+        pandas_to_sql_if_exists('std_params', std_params, engine, "replace")
+
     # ## PRINCIPAL COMPONENT ANALYSIS
     num_components = 11 #Minimum: Time, current, derivative
 
@@ -273,13 +252,13 @@ if __name__ == '__main__':
     num_val_samples = len(train_labels) // k_folds
 
     n1_start, n2_start = 8, 8
-    sum_nodes = 64 #32
+    sum_nodes = 16 #32
 
-    num_epochs = 400 #400 #500
+    num_epochs = 100 #400 #500
     batch_size = 16 #50
     verbose = 0
 
-    folder_name = "WQM_NNs_main"
+    folder_name = file_management.get_file_path()
 
 
     print("\n")
@@ -357,7 +336,7 @@ if __name__ == '__main__':
 
     print(best_architecture)
     
-    filepath = f"C:\\Users\\junai\\AppData\\Roaming\\Python\\Python39\\Scripts\\Asparagine Machine Learning\\Additional Parameters\\{folder_name}"
+    filepath = file_management.get_file_path()
     local_download_path = os.path.expanduser(filepath)
     print(local_download_path)
 
@@ -386,8 +365,8 @@ if __name__ == '__main__':
     zip_filename = folder_name
 
     shutil.make_archive(zip_filename, 'zip', f".\\{folder_name}")
-    # s3 = aws_s3.s3_bucket()
-    # s3.meta.client.upload_file('ML_Models.zip', 'wqm-ml-models', 'ML_Models.zip')
+    s3 = aws_s3.s3_bucket()
+    s3.meta.client.upload_file(f'{folder_name}.zip', aws_s3.get_bucket_name(), f'{folder_name}.zip')
 
     
     dict_epochs = dict_epochs | dict_highest_R | dict_lowest_MAE
